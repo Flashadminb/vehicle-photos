@@ -41,13 +41,13 @@ function driveError(e: unknown): never {
   if (e instanceof ApiError) throw e;
   if (e instanceof DriveNotConnectedError) throw unavailable('drive_not_connected', e.message);
   console.error('Drive error', e);
-  throw unavailable('drive_error', 'Google Drive is temporarily unavailable. The upload will retry.');
+  throw unavailable('drive_error', 'Google Drive ใช้งานไม่ได้ชั่วคราว ระบบจะลองอัปโหลดใหม่เอง');
 }
 
 async function loadRoundForOperator(env: Env, user: AuthUser, roundId: string) {
   const r = await env.DB.prepare(`SELECT * FROM rounds WHERE id = ?`).bind(roundId).first<any>();
   if (!r) throw notFound('Round not found.');
-  if (r.operator_id !== user.id) throw forbidden('This round belongs to another operator.');
+  if (r.operator_id !== user.id) throw forbidden('รอบนี้เป็นของพนักงานคนอื่น');
   return r;
 }
 
@@ -78,7 +78,7 @@ export async function beginImage(
 
   // 1. Round: created when the first image is accepted, idempotent on client_round_id.
   let round = await env.DB.prepare(`SELECT * FROM rounds WHERE client_round_id = ?`).bind(input.clientRoundId).first<any>();
-  if (round && round.operator_id !== user.id) throw forbidden('This round belongs to another operator.');
+  if (round && round.operator_id !== user.id) throw forbidden('รอบนี้เป็นของพนักงานคนอื่น');
   let workflow: WorkflowVersion | null;
   if (!round) {
     workflow = await getWorkflow(env, input.workflowVersionId);
@@ -113,12 +113,12 @@ export async function beginImage(
       )
       .run();
     round = await env.DB.prepare(`SELECT * FROM rounds WHERE client_round_id = ?`).bind(input.clientRoundId).first<any>();
-    if (round.operator_id !== user.id) throw forbidden('This round belongs to another operator.');
+    if (round.operator_id !== user.id) throw forbidden('รอบนี้เป็นของพนักงานคนอื่น');
   }
   // The round's workflow is frozen: later admin edits never change it.
   workflow = await getWorkflow(env, round.workflow_version_id);
   if (!workflow) throw new Error('Workflow version missing');
-  if (round.status === 'finalized') throw conflict('round_finalized', 'This set has already been saved.');
+  if (round.status === 'finalized') throw conflict('round_finalized', 'ชุดนี้ถูกบันทึกไปแล้ว');
   if (round.status === 'abandoned') {
     await env.DB.prepare(`UPDATE rounds SET status = 'open', updated_at = ? WHERE id = ?`).bind(now, round.id).run();
   }
@@ -127,7 +127,7 @@ export async function beginImage(
   if (stepIndex < 0) throw badRequest('This step is not part of the round’s workflow.');
   const step = workflow.steps[stepIndex];
   if (input.source === 'upload' && !step.allowUpload) {
-    throw new ApiError(403, 'upload_not_allowed', 'Uploading a file is not allowed for this step.');
+    throw new ApiError(403, 'upload_not_allowed', 'ขั้นตอนนี้ไม่อนุญาตให้อัปโหลดไฟล์');
   }
   const label = stepLabel(step.labels, settings.defaultLanguage, settings.fallbackLanguage);
   const fileName = stepFileName(stepIndex, label);
@@ -243,7 +243,7 @@ export async function completeImage(
       if (!id) throw badRequest('originalFileId is required while originals are kept.');
       const f = await drive.getFile(id);
       if (!f || f.trashed || !f.parents.includes(round.drive_folder_id)) {
-        throw new ApiError(422, 'upload_not_verified', 'The uploaded file could not be verified in Drive. Upload it again.');
+        throw new ApiError(422, 'upload_not_verified', 'ตรวจสอบไฟล์ใน Drive ไม่ได้ ระบบจะอัปโหลดใหม่');
       }
     }
   } catch (e) {
@@ -300,7 +300,7 @@ export async function finalizeRound(
   const missing = workflow.steps.filter((s) => s.required && !byStep.has(s.id)).map((s) => s.id);
   const notUploaded = results.filter((r) => r.status !== 'uploaded').map((r) => r.step_id);
   if (missing.length || notUploaded.length) {
-    throw conflict('incomplete', 'Some photos are missing or still uploading.', { missing, notUploaded });
+    throw conflict('incomplete', 'ยังขาดรูปหรือรูปยังอัปโหลดไม่เสร็จ', { missing, notUploaded });
   }
   const settings = await getSettings(env);
   if (settings.ocrBlocksDone && round.ocr_status === 'pending') {

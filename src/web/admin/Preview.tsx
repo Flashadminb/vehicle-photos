@@ -30,7 +30,7 @@ export function FieldPreview({
     <div className="preview">
       <div className="preview-controls">
         <label className="field-inline small">
-          Preview language
+          ภาษาตัวอย่าง
           <select className="input input-sm" value={lang} onChange={(e) => setLang(e.target.value)}>
             {languages.map((l) => (
               <option key={l.code} value={l.code}>
@@ -40,18 +40,18 @@ export function FieldPreview({
           </select>
         </label>
         <label className="field-inline small">
-          Screen
+          หน้าจอ
           <select className="input input-sm" value={stepIndex} onChange={(e) => setStepIndex(Number(e.target.value))}>
             {steps.map((s, i) => (
               <option key={s.id} value={i}>
-                Step {i + 1}
+                ขั้นตอนที่ {i + 1}
               </option>
             ))}
-            <option value={steps.length}>Review / DONE</option>
+            <option value={steps.length}>ตรวจสอบ / เสร็จสิ้น</option>
           </select>
         </label>
       </div>
-      <div className="phone" aria-label="Field app preview">
+      <div className="phone" aria-label="ตัวอย่างแอปภาคสนาม">
         <CaptureView
           preview
           t={t}

@@ -38,7 +38,7 @@ export async function createPasswordHash(env: Env, password: string) {
 
 export function validateNewPassword(pw: unknown): string {
   if (typeof pw !== 'string' || pw.length < 8 || pw.length > 200) {
-    throw new ApiError(400, 'weak_password', 'Password must be 8–200 characters.');
+    throw new ApiError(400, 'weak_password', 'รหัสผ่านต้องยาว 8–200 ตัวอักษร');
   }
   return pw;
 }
@@ -47,7 +47,7 @@ async function checkLock(env: Env, keys: string[], now: number) {
   for (const key of keys) {
     const r = await env.DB.prepare(`SELECT locked_until FROM login_attempts WHERE key = ?`).bind(key).first<{ locked_until: number | null }>();
     if (r?.locked_until && r.locked_until > now) {
-      throw new ApiError(429, 'locked', 'Too many failed attempts. Try again later.');
+      throw new ApiError(429, 'locked', 'ใส่รหัสผิดหลายครั้งเกินไป กรุณาลองใหม่ภายหลัง');
     }
   }
 }
@@ -75,11 +75,11 @@ export async function login(c: Context<AppBindings>, kind: SessionKind, username
   const ok = row ? await verifyPassword(password, row.password_hash) : false;
   if (!row || !ok) {
     await recordFail(env, keys, now);
-    throw new ApiError(401, 'invalid_credentials', 'Incorrect username or password.');
+    throw new ApiError(401, 'invalid_credentials', 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
   }
-  if (row.disabled) throw new ApiError(403, 'disabled', 'This account is disabled.');
+  if (row.disabled) throw new ApiError(403, 'disabled', 'บัญชีนี้ถูกปิดใช้งาน');
   if (!ALLOWED_ROLES[kind].includes(row.role)) {
-    throw forbidden(kind === 'admin' ? 'This account cannot use the admin dashboard.' : 'This account cannot use the field app.');
+    throw forbidden(kind === 'admin' ? 'บัญชีนี้ไม่มีสิทธิ์ใช้แดชบอร์ดผู้ดูแล' : 'บัญชีนี้ไม่มีสิทธิ์ใช้แอปภาคสนาม');
   }
   await env.DB.prepare(`DELETE FROM login_attempts WHERE key = ?`).bind(keys[0]).run();
   const token = randomToken();
@@ -130,7 +130,7 @@ export function requireSession(kind: SessionKind): MiddlewareHandler<AppBindings
       throw new ApiError(403, 'csrf', 'Missing client header.');
     }
     const token = getCookie(c, COOKIE[kind].name);
-    if (!token) throw new ApiError(401, 'unauthenticated', 'Please sign in.');
+    if (!token) throw new ApiError(401, 'unauthenticated', 'กรุณาเข้าสู่ระบบ');
     const id = await sha256Hex(token);
     const row = await c.env.DB.prepare(
       `SELECT s.id AS sid, s.kind, s.expires_at, s.revoked_at, s.last_seen_at, u.*
@@ -139,7 +139,7 @@ export function requireSession(kind: SessionKind): MiddlewareHandler<AppBindings
       .bind(id)
       .first<any>();
     if (!row || row.kind !== kind || row.revoked_at || row.expires_at < now) {
-      throw new ApiError(401, 'unauthenticated', 'Your session has expired. Please sign in again.');
+      throw new ApiError(401, 'unauthenticated', 'หมดเวลาการใช้งาน กรุณาเข้าสู่ระบบใหม่');
     }
     if (row.disabled) throw new ApiError(401, 'unauthenticated', 'This account is disabled.');
     if (!ALLOWED_ROLES[kind].includes(row.role)) throw forbidden();

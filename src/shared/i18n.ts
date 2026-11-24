@@ -45,6 +45,9 @@ export const TRANSLATION_KEYS = [
   'change_password_title',
   'new_password',
   'save',
+  'online',
+  'offline',
+  'demo_emulated',
 ] as const;
 
 export type TranslationKey = (typeof TRANSLATION_KEYS)[number];
@@ -91,6 +94,9 @@ export const BUILTIN_TRANSLATIONS: Record<string, Record<TranslationKey, string>
     change_password_title: 'Set a new password',
     new_password: 'New password (at least 8 characters)',
     save: 'Save',
+    online: 'Online',
+    offline: 'Offline',
+    demo_emulated: 'is emulated',
   },
   th: {
     app_name: 'ถ่ายรูปรถ',
@@ -133,6 +139,9 @@ export const BUILTIN_TRANSLATIONS: Record<string, Record<TranslationKey, string>
     change_password_title: 'ตั้งรหัสผ่านใหม่',
     new_password: 'รหัสผ่านใหม่ (อย่างน้อย 8 ตัวอักษร)',
     save: 'บันทึก',
+    online: 'ออนไลน์',
+    offline: 'ออฟไลน์',
+    demo_emulated: 'ถูกจำลอง',
   },
 };
 

@@ -47,7 +47,7 @@ export function WorkflowConfig() {
     setMsg(null);
     try {
       const r = await api<{ id: number }>('POST', '/api/admin/workflow', { steps, note });
-      setMsg({ ok: true, text: `Published workflow v${r.id}. Rounds already in progress keep their original version; new rounds use v${r.id}.` });
+      setMsg({ ok: true, text: `เผยแพร่ขั้นตอนเวอร์ชัน v${r.id} แล้ว รอบที่กำลังถ่ายอยู่ยังใช้เวอร์ชันเดิม รอบใหม่จะใช้ v${r.id}` });
       setNote('');
       await load();
     } catch (e) {
@@ -77,14 +77,14 @@ export function WorkflowConfig() {
   return (
     <div className="page">
       <div className="page-head">
-        <h1>Capture workflow & languages</h1>
-        <span className="muted small">Current version v{current.id}. Publishing creates a new version for new rounds only.</span>
+        <h1>ขั้นตอนการถ่ายและภาษา</h1>
+        <span className="muted small">เวอร์ชันปัจจุบัน v{current.id} การเผยแพร่จะสร้างเวอร์ชันใหม่ที่ใช้กับรอบใหม่เท่านั้น</span>
       </div>
       {msg && <p className={`banner ${msg.ok ? 'banner-ok' : 'banner-bad'}`}>{msg.text}</p>}
       <div className="split">
         <div className="split-main">
           <section className="card section">
-            <h2>Steps</h2>
+            <h2>ขั้นตอน</h2>
             <ol className="steps-editor">
               {steps.map((s, i) => (
                 <li key={s.id} className="step-card">
@@ -92,29 +92,29 @@ export function WorkflowConfig() {
                     <span className="step-num">{String(i + 1).padStart(2, '0')}</span>
                     <span className="mono small muted">{s.id}</span>
                     <span style={{ flex: 1 }} />
-                    <button className="btn btn-sm btn-icon" onClick={() => move(i, -1)} disabled={i === 0} aria-label="Move up">↑</button>
-                    <button className="btn btn-sm btn-icon" onClick={() => move(i, 1)} disabled={i === steps.length - 1} aria-label="Move down">↓</button>
+                    <button className="btn btn-sm btn-icon" onClick={() => move(i, -1)} disabled={i === 0} aria-label="เลื่อนขึ้น">↑</button>
+                    <button className="btn btn-sm btn-icon" onClick={() => move(i, 1)} disabled={i === steps.length - 1} aria-label="เลื่อนลง">↓</button>
                     <button className="btn btn-sm btn-danger" onClick={() => setSteps((x) => x.filter((_, j) => j !== i))} disabled={steps.length <= 1}>
-                      Remove
+                      ลบขั้นตอน
                     </button>
                   </div>
                   <div className="form-grid">
                     {languages.map((l) => (
                       <label key={l.code} className="field">
-                        <span>Label · {l.name}</span>
+                        <span>ชื่อขั้นตอน · {l.name}</span>
                         <input className="input" value={s.labels[l.code] ?? ''} onChange={(e) => update(i, { labels: { ...s.labels, [l.code]: e.target.value } })} />
                       </label>
                     ))}
                   </div>
                   <div className="step-flags">
                     <label className="checkbox">
-                      <input type="checkbox" checked={s.required} onChange={(e) => update(i, { required: e.target.checked })} /> Required
+                      <input type="checkbox" checked={s.required} onChange={(e) => update(i, { required: e.target.checked })} /> บังคับ
                     </label>
                     <label className="checkbox">
-                      <input type="checkbox" checked={s.allowUpload} onChange={(e) => update(i, { allowUpload: e.target.checked })} /> Allow file upload
+                      <input type="checkbox" checked={s.allowUpload} onChange={(e) => update(i, { allowUpload: e.target.checked })} /> อนุญาตให้อัปโหลดไฟล์
                     </label>
                     <label className="checkbox">
-                      <input type="checkbox" checked={s.ocr} onChange={(e) => update(i, { ocr: e.target.checked })} /> Read license plate (OCR)
+                      <input type="checkbox" checked={s.ocr} onChange={(e) => update(i, { ocr: e.target.checked })} /> อ่านป้ายทะเบียน (OCR)
                     </label>
                   </div>
                 </li>
@@ -126,24 +126,24 @@ export function WorkflowConfig() {
                 setSteps((s) => [...s, { id: `step_${Math.random().toString(36).slice(2, 8)}`, required: false, allowUpload: true, ocr: false, labels: { th: 'ขั้นตอนใหม่', en: 'New step' } }])
               }
             >
-              + Add step
+              + เพิ่มขั้นตอน
             </button>
             <div className="section-foot">
-              <input className="input" placeholder="Change note (optional)" value={note} onChange={(e) => setNote(e.target.value)} aria-label="Change note" />
+              <input className="input" placeholder="หมายเหตุการเปลี่ยนแปลง (ไม่บังคับ)" value={note} onChange={(e) => setNote(e.target.value)} aria-label="หมายเหตุการเปลี่ยนแปลง" />
               <button className="btn btn-primary" disabled={!dirty} onClick={() => void publish()}>
-                Publish new version
+                เผยแพร่เวอร์ชันใหม่
               </button>
               <button className="btn" disabled={!dirty} onClick={() => setSteps(structuredClone(current.steps))}>
-                Discard
+                ยกเลิกการแก้ไข
               </button>
             </div>
           </section>
 
           <section className="card section">
-            <h2>Languages</h2>
+            <h2>ภาษา</h2>
             <div className="form-grid">
               <label className="field">
-                <span>Default language</span>
+                <span>ภาษาเริ่มต้น</span>
                 <select className="input" value={settings.defaultLanguage} onChange={(e) => void setDefaults({ defaultLanguage: e.target.value })}>
                   {languages.map((l) => (
                     <option key={l.code} value={l.code}>{l.name}</option>
@@ -151,7 +151,7 @@ export function WorkflowConfig() {
                 </select>
               </label>
               <label className="field">
-                <span>Fallback when a text is missing</span>
+                <span>ภาษาสำรองเมื่อไม่มีคำแปล</span>
                 <select className="input" value={settings.fallbackLanguage} onChange={(e) => void setDefaults({ fallbackLanguage: e.target.value })}>
                   {languages.map((l) => (
                     <option key={l.code} value={l.code}>{l.name}</option>
@@ -162,9 +162,9 @@ export function WorkflowConfig() {
             <table className="table table-compact">
               <thead>
                 <tr>
-                  <th>Code</th>
-                  <th>Name</th>
-                  <th>Enabled for operators</th>
+                  <th>รหัส</th>
+                  <th>ชื่อ</th>
+                  <th>ให้พนักงานเลือกได้</th>
                   <th />
                 </tr>
               </thead>
@@ -173,17 +173,17 @@ export function WorkflowConfig() {
                   <tr key={l.code}>
                     <td className="mono">{l.code}</td>
                     <td>
-                      <input className="input input-sm" defaultValue={l.name} onBlur={(e) => e.target.value !== l.name && void saveLanguage({ ...l, name: e.target.value })} aria-label={`Name of ${l.code}`} />
+                      <input className="input input-sm" defaultValue={l.name} onBlur={(e) => e.target.value !== l.name && void saveLanguage({ ...l, name: e.target.value })} aria-label={`ชื่อของ ${l.code}`} />
                     </td>
                     <td>
-                      <input type="checkbox" checked={l.enabled} onChange={(e) => void saveLanguage({ ...l, enabled: e.target.checked })} aria-label={`Enable ${l.code}`} />
+                      <input type="checkbox" checked={l.enabled} onChange={(e) => void saveLanguage({ ...l, enabled: e.target.checked })} aria-label={`เปิดใช้ ${l.code}`} />
                     </td>
                     <td>
                       <button
                         className="btn btn-sm btn-danger"
                         disabled={l.code === settings.defaultLanguage || l.code === settings.fallbackLanguage}
                         onClick={async () => {
-                          if (!confirm(`Remove ${l.name} and its translations?`)) return;
+                          if (!confirm(`ลบภาษา ${l.name} และคำแปลทั้งหมด?`)) return;
                           try {
                             await api('DELETE', `/api/admin/languages/${l.code}`);
                             await load();
@@ -192,7 +192,7 @@ export function WorkflowConfig() {
                           }
                         }}
                       >
-                        Remove
+                        ลบ
                       </button>
                     </td>
                   </tr>
@@ -207,30 +207,30 @@ export function WorkflowConfig() {
                 setNewLang({ code: '', name: '' });
               }}
             >
-              <input className="input input-sm" placeholder="Code (e.g. my, lo, zh)" value={newLang.code} onChange={(e) => setNewLang({ ...newLang, code: e.target.value })} required aria-label="New language code" />
-              <input className="input input-sm" placeholder="Name (e.g. မြန်မာ)" value={newLang.name} onChange={(e) => setNewLang({ ...newLang, name: e.target.value })} required aria-label="New language name" />
-              <button className="btn btn-sm">+ Add language</button>
+              <input className="input input-sm" placeholder="รหัส (เช่น my, lo, zh)" value={newLang.code} onChange={(e) => setNewLang({ ...newLang, code: e.target.value })} required aria-label="รหัสภาษาใหม่" />
+              <input className="input input-sm" placeholder="ชื่อ (เช่น မြန်မာ)" value={newLang.name} onChange={(e) => setNewLang({ ...newLang, name: e.target.value })} required aria-label="ชื่อภาษาใหม่" />
+              <button className="btn btn-sm">+ เพิ่มภาษา</button>
             </form>
-            <p className="small muted">After adding a language, translate the interface under “Field app configuration” and step labels above.</p>
+            <p className="small muted">หลังเพิ่มภาษา ให้แปลข้อความในหน้า “ตั้งค่าแอปภาคสนาม” และชื่อขั้นตอนด้านบน</p>
           </section>
 
           <section className="card section">
-            <h2>Version history</h2>
+            <h2>ประวัติเวอร์ชัน</h2>
             <table className="table table-compact">
               <thead>
                 <tr>
-                  <th>Version</th>
-                  <th>Published</th>
-                  <th>By</th>
-                  <th>Note</th>
-                  <th>Rounds</th>
+                  <th>เวอร์ชัน</th>
+                  <th>เผยแพร่เมื่อ</th>
+                  <th>โดย</th>
+                  <th>หมายเหตุ</th>
+                  <th>จำนวนรอบ</th>
                 </tr>
               </thead>
               <tbody>
                 {versions.map((v) => (
                   <tr key={v.id}>
                     <td>v{v.id}</td>
-                    <td>{v.created_at ? formatBangkok(v.created_at) : 'initial'}</td>
+                    <td>{v.created_at ? formatBangkok(v.created_at) : 'ค่าเริ่มต้น'}</td>
                     <td>{v.created_by_name ?? '—'}</td>
                     <td>{v.note ?? ''}</td>
                     <td>{v.round_count}</td>
@@ -242,7 +242,7 @@ export function WorkflowConfig() {
         </div>
         <aside className="split-side">
           <FieldPreview steps={steps} overrides={overrides} languages={languages} fallbackLanguage={settings.fallbackLanguage} initialLang={settings.defaultLanguage} />
-          <p className="small muted">Live preview of the unpublished draft.</p>
+          <p className="small muted">ตัวอย่างสดของฉบับร่างที่ยังไม่เผยแพร่</p>
         </aside>
       </div>
     </div>

@@ -74,7 +74,7 @@ make that swap contained.
 | Abandoned rounds | Open rounds idle > 48 h (setting) become "abandoned"; Drive folder kept; they reopen if the phone uploads again. | — |
 | OCR | Off by default. Providers: Google Cloud Vision (TEXT_DETECTION) or AI for Thai LPR (experimental, response parsed defensively). **Must be validated with real plate photos.** | Which provider/quality is acceptable. |
 | Old sets | "Old" = op_date before the recent window (default: today only, Bangkok). Optional "cache mode" also shows images still in R2. | — |
-| Dashboard language | Dashboard UI in English; field app fully translatable. | Translate dashboard too? |
+| Dashboard language | Dashboard UI in Thai; field app fully translatable by admins. | — |
 | Password hashing | PBKDF2-SHA256 100 000 iterations (Workers maximum). | On the free plan (10 ms CPU) this can occasionally exceed the CPU limit on login; lower `PASSWORD_ITERATIONS` or use Workers Paid ($5/mo). |
 
 ## 4. Google Drive authentication, storage and permissions

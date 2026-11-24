@@ -8,6 +8,9 @@ import { exportSetsToExcel } from './excel';
 
 type Dir = 'first' | 'next' | 'prev' | 'last';
 
+const STATUS_TH: Record<string, string> = { finalized: 'เสร็จสมบูรณ์', open: 'กำลังถ่าย', abandoned: 'ถูกทิ้งไว้' };
+const PLATE_SRC_TH: Record<string, string> = { none: 'ยังไม่มี', ocr: 'OCR', manual: 'ผู้ดูแลแก้ไข' };
+
 export function History() {
   const me = useMe();
   const [range, setRange] = useState<DateRange | null>({ start: me.today, end: me.today });
@@ -30,9 +33,9 @@ export function History() {
 
   const timeError =
     !isValidTimeString(startTime) || !isValidTimeString(endTime)
-      ? 'Times must be HH:MM:SS.'
+      ? 'เวลาต้องอยู่ในรูปแบบ ชช:นน:วว'
       : range && range.start === range.end && endTime < startTime
-        ? 'On a single day the end time must be after the start time.'
+        ? 'ถ้าเลือกวันเดียว เวลาสิ้นสุดต้องอยู่หลังเวลาเริ่มต้น'
         : '';
 
   const load = useCallback(
@@ -84,7 +87,7 @@ export function History() {
     try {
       await exportSetsToExcel([...selected], (done, total) => setExporting({ done, total, ctrl }), ctrl.signal);
     } catch (e) {
-      if ((e as Error).name !== 'AbortError') alert(`Export failed: ${(e as Error).message}`);
+      if ((e as Error).name !== 'AbortError') alert(`ส่งออกไม่สำเร็จ: ${(e as Error).message}`);
     } finally {
       setExporting(null);
     }
@@ -93,50 +96,50 @@ export function History() {
   return (
     <div className="page">
       <div className="page-head">
-        <h1>Photo set history</h1>
-        <span className="muted small">One row = one complete photo set · times in Asia/Bangkok</span>
+        <h1>ประวัติชุดรูป</h1>
+        <span className="muted small">1 แถว = 1 ชุดรูปที่สมบูรณ์ · เวลาเป็นเวลาประเทศไทย (Asia/Bangkok)</span>
       </div>
 
-      <section className="card filters" aria-label="Filters">
+      <section className="card filters" aria-label="ตัวกรอง">
         <div className="field">
-          <span>Date range</span>
+          <span>ช่วงวันที่</span>
           <DateRangePicker value={range} onApply={setRange} today={me.today} />
         </div>
         <label className="field">
-          <span>Start time</span>
+          <span>เวลาเริ่มต้น</span>
           <input className="input" type="time" step={1} value={startTime} onChange={(e) => setStartTime(e.target.value.length === 5 ? e.target.value + ':00' : e.target.value)} disabled={!range} />
         </label>
         <label className="field">
-          <span>End time</span>
+          <span>เวลาสิ้นสุด</span>
           <input className="input" type="time" step={1} value={endTime} onChange={(e) => setEndTime(e.target.value.length === 5 ? e.target.value + ':00' : e.target.value)} disabled={!range} />
         </label>
         <label className="field grow">
-          <span>Search plate, operator or set ID</span>
-          <input className="input" type="search" placeholder="e.g. กข 1234, 1234, PF-000123, Somchai" value={q} onChange={(e) => setQ(e.target.value)} />
+          <span>ค้นหาทะเบียน ผู้ถ่าย หรือรหัสชุด</span>
+          <input className="input" type="search" placeholder="เช่น กข 1234, 1234, PF-000123, สมชาย" value={q} onChange={(e) => setQ(e.target.value)} />
         </label>
         <label className="field">
-          <span>Status</span>
+          <span>สถานะ</span>
           <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="finalized">Completed</option>
-            <option value="open">In progress</option>
-            <option value="abandoned">Abandoned</option>
-            <option value="all">All</option>
+            <option value="finalized">เสร็จสมบูรณ์</option>
+            <option value="open">กำลังถ่าย</option>
+            <option value="abandoned">ถูกทิ้งไว้</option>
+            <option value="all">ทั้งหมด</option>
           </select>
         </label>
         {me.can('sets.viewHidden') && (
           <label className="field">
-            <span>Visibility</span>
+            <span>การแสดงผล</span>
             <select className="input" value={visibility} onChange={(e) => setVisibility(e.target.value)}>
-              <option value="normal">Normal</option>
-              <option value="hidden">Hidden</option>
-              {me.can('sets.viewRemoved') && <option value="removed">Removed</option>}
-              {me.can('sets.viewRemoved') && <option value="all">All</option>}
+              <option value="normal">ปกติ</option>
+              <option value="hidden">ซ่อนอยู่</option>
+              {me.can('sets.viewRemoved') && <option value="removed">ลบออกจากประวัติแล้ว</option>}
+              {me.can('sets.viewRemoved') && <option value="all">ทั้งหมด</option>}
             </select>
           </label>
         )}
         {range && (
           <p className="small muted filters-note">
-            Interval: <strong>{range.start} {startTime}</strong> → <strong>{range.end} {endTime}</strong> (one continuous span, inclusive)
+            ช่วงเวลา: <strong>{range.start} {startTime}</strong> → <strong>{range.end} {endTime}</strong> (เป็นช่วงต่อเนื่องช่วงเดียว รวมวินาทีสุดท้าย)
           </p>
         )}
         {timeError && <p className="banner banner-bad small filters-note" role="alert">{timeError}</p>}
@@ -145,23 +148,23 @@ export function History() {
       <section className="card table-card">
         <div className="table-toolbar">
           <span className="small muted" aria-live="polite">
-            {loading ? <span className="spinner" /> : total === 0 ? 'No results' : `Showing ${offset + 1}–${offset + rows.length} of ${total.toLocaleString()}`}
+            {loading ? <span className="spinner" /> : total === 0 ? 'ไม่พบรายการ' : `แสดง ${offset + 1}–${offset + rows.length} จาก ${total.toLocaleString()} ชุด`}
           </span>
           <span style={{ flex: 1 }} />
           {me.can('sets.export') && (
-            <button className="btn btn-sm" disabled={selected.size === 0 || !!exporting || selected.size > me.settings.exportMaxSets} onClick={() => void runExport()} title={`Up to ${me.settings.exportMaxSets} sets`}>
-              ⬇ Export {selected.size || ''} to Excel
+            <button className="btn btn-sm" disabled={selected.size === 0 || !!exporting || selected.size > me.settings.exportMaxSets} onClick={() => void runExport()} title={`ได้สูงสุด ${me.settings.exportMaxSets} ชุดต่อครั้ง`}>
+              ⬇ ส่งออก Excel {selected.size ? `(${selected.size} ชุด)` : ''}
             </button>
           )}
           <label className="field-inline small">
-            Sort
+            เรียง
             <select className="input input-sm" value={sort} onChange={(e) => setSort(e.target.value as 'newest' | 'oldest')}>
-              <option value="newest">Newest first</option>
-              <option value="oldest">Oldest first</option>
+              <option value="newest">ใหม่สุดก่อน</option>
+              <option value="oldest">เก่าสุดก่อน</option>
             </select>
           </label>
           <label className="field-inline small">
-            Rows
+            แถวต่อหน้า
             <select className="input input-sm" value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
               {[20, 50, 100].map((n) => (
                 <option key={n}>{n}</option>
@@ -171,9 +174,9 @@ export function History() {
         </div>
         {exporting && (
           <div className="banner banner-ok export-progress">
-            Building Excel… {exporting.done}/{exporting.total || '…'} images
+            กำลังสร้างไฟล์ Excel… {exporting.done}/{exporting.total || '…'} รูป
             <progress max={exporting.total || 1} value={exporting.done} />
-            <button className="btn btn-sm" onClick={() => exporting.ctrl.abort()}>Cancel</button>
+            <button className="btn btn-sm" onClick={() => exporting.ctrl.abort()}>ยกเลิก</button>
           </div>
         )}
         {error && <p className="banner banner-bad">{error}</p>}
@@ -184,7 +187,7 @@ export function History() {
                 <th className="col-check">
                   <input
                     type="checkbox"
-                    aria-label="Select all on this page"
+                    aria-label="เลือกทั้งหมดในหน้านี้"
                     checked={allSelected}
                     onChange={() =>
                       setSelected((s) => {
@@ -195,13 +198,13 @@ export function History() {
                     }
                   />
                 </th>
-                <th>Round start</th>
-                <th>Photo set ID</th>
-                <th>License plate</th>
-                <th>Operator</th>
-                <th>Images</th>
-                <th>Storage</th>
-                <th>Actions</th>
+                <th>เริ่มรอบ</th>
+                <th>รหัสชุดรูป</th>
+                <th>ทะเบียนรถ</th>
+                <th>ผู้ถ่าย</th>
+                <th>รูป</th>
+                <th>การจัดเก็บ</th>
+                <th>การจัดการ</th>
               </tr>
             </thead>
             <tbody>
@@ -223,18 +226,18 @@ export function History() {
               ))}
               {!loading && rows.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="empty">No photo sets match these filters.</td>
+                  <td colSpan={8} className="empty">ไม่มีชุดรูปที่ตรงกับตัวกรอง</td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
-        <nav className="pager" aria-label="Pagination">
-          <button className="btn btn-sm" disabled={!data?.prevCursor || loading} onClick={() => void load('first')}>« First</button>
-          <button className="btn btn-sm" disabled={!data?.prevCursor || loading} onClick={() => void load('prev', data!.prevCursor, { offset, count: rows.length })}>‹ Prev</button>
-          <span className="small muted">Page {page.toLocaleString()} of {pages.toLocaleString()}</span>
-          <button className="btn btn-sm" disabled={!data?.nextCursor || loading} onClick={() => void load('next', data!.nextCursor, { offset, count: rows.length })}>Next ›</button>
-          <button className="btn btn-sm" disabled={!data?.nextCursor || loading} onClick={() => void load('last')}>Last »</button>
+        <nav className="pager" aria-label="เปลี่ยนหน้า">
+          <button className="btn btn-sm" disabled={!data?.prevCursor || loading} onClick={() => void load('first')}>« หน้าแรก</button>
+          <button className="btn btn-sm" disabled={!data?.prevCursor || loading} onClick={() => void load('prev', data!.prevCursor, { offset, count: rows.length })}>‹ ก่อนหน้า</button>
+          <span className="small muted">หน้า {page.toLocaleString()} จาก {pages.toLocaleString()}</span>
+          <button className="btn btn-sm" disabled={!data?.nextCursor || loading} onClick={() => void load('next', data!.nextCursor, { offset, count: rows.length })}>ถัดไป ›</button>
+          <button className="btn btn-sm" disabled={!data?.nextCursor || loading} onClick={() => void load('last')}>หน้าสุดท้าย »</button>
         </nav>
       </section>
 
@@ -247,11 +250,11 @@ export function History() {
 function storageLabel(r: SetRow) {
   const pills = [];
   if (r.folderStatus === 'ready') pills.push(<span key="d" className="pill pill-ok">Drive ✓</span>);
-  else pills.push(<span key="d" className="pill pill-warn">Drive: {r.folderStatus}</span>);
-  pills.push(r.imagesAllowed ? <span key="r" className="pill pill-info">Recent</span> : <span key="r" className="pill">Archived · Drive only</span>);
-  if (r.hidden) pills.push(<span key="h" className="pill pill-warn">Hidden</span>);
-  if (r.removed) pills.push(<span key="x" className="pill pill-bad">Removed</span>);
-  if (r.status !== 'finalized') pills.push(<span key="s" className="pill pill-warn">{r.status === 'open' ? 'In progress' : 'Abandoned'}</span>);
+  else pills.push(<span key="d" className="pill pill-warn">Drive: {r.folderStatus === 'pending' ? 'รอสร้างโฟลเดอร์' : r.folderStatus === 'error' ? 'ผิดพลาด' : r.folderStatus}</span>);
+  pills.push(r.imagesAllowed ? <span key="r" className="pill pill-info">ล่าสุด</span> : <span key="r" className="pill">เก่า · ดูใน Drive</span>);
+  if (r.hidden) pills.push(<span key="h" className="pill pill-warn">ซ่อนอยู่</span>);
+  if (r.removed) pills.push(<span key="x" className="pill pill-bad">ลบจากประวัติแล้ว</span>);
+  if (r.status !== 'finalized') pills.push(<span key="s" className="pill pill-warn">{r.status === 'open' ? 'กำลังถ่าย' : 'ถูกทิ้งไว้'}</span>);
   return <div className="pills">{pills}</div>;
 }
 
@@ -260,13 +263,13 @@ function Row({ r, checked, onCheck, onView, onDetails }: { r: SetRow; checked: b
   return (
     <tr className={checked ? 'is-selected' : ''}>
       <td className="col-check">
-        <input type="checkbox" checked={checked} onChange={onCheck} aria-label={`Select ${r.publicId}`} />
+        <input type="checkbox" checked={checked} onChange={onCheck} aria-label={`เลือก ${r.publicId}`} />
       </td>
       <td className="nowrap">{formatBangkok(r.startedAt)}</td>
       <td className="mono nowrap">{r.publicId}</td>
       <td className="nowrap">
         {r.plate ? <strong>{r.plate}</strong> : <span className="muted">{r.plateDisplay}</span>}
-        {r.plateSource === 'manual' && <span className="pill pill-info tiny" title="Corrected by an administrator">edited</span>}
+        {r.plateSource === 'manual' && <span className="pill pill-info tiny" title="แก้ไขโดยผู้ดูแล">แก้ไขแล้ว</span>}
       </td>
       <td>{r.operator.name}</td>
       <td className="nowrap">
@@ -277,16 +280,16 @@ function Row({ r, checked, onCheck, onView, onDetails }: { r: SetRow; checked: b
       <td>{storageLabel(r)}</td>
       <td>
         <div className="row-actions">
-          <button className="btn btn-sm" onClick={onView} disabled={!r.imagesAllowed} title={r.imagesAllowed ? 'View the whole set' : 'Older set — images are not loaded here. Open it in Drive.'}>
-            View photo set
+          <button className="btn btn-sm" onClick={onView} disabled={!r.imagesAllowed} title={r.imagesAllowed ? 'ดูรูปทั้งชุด' : 'ชุดเก่า — ไม่โหลดรูปในหน้านี้ กรุณาเปิดใน Drive'}>
+            ดูชุดรูป
           </button>
-          <button className="btn btn-sm" onClick={onDetails}>Details</button>
+          <button className="btn btn-sm" onClick={onDetails}>รายละเอียด</button>
           {r.driveUrl ? (
             <a className="btn btn-sm btn-primary" href={r.driveUrl} target="_blank" rel="noopener noreferrer">
-              Open set in Drive ↗
+              เปิดชุดใน Drive ↗
             </a>
           ) : (
-            <button className="btn btn-sm" disabled>Open set in Drive</button>
+            <button className="btn btn-sm" disabled>เปิดชุดใน Drive</button>
           )}
         </div>
       </td>
@@ -315,7 +318,7 @@ function Modal({ title, onClose, children, wide }: { title: string; onClose: () 
       <div className={`modal card ${wide ? 'modal-wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
         <div className="modal-head">
           <h2>{title}</h2>
-          <button className="btn btn-sm btn-icon" onClick={onClose} aria-label="Close" autoFocus>
+          <button className="btn btn-sm btn-icon" onClick={onClose} aria-label="ปิด" autoFocus>
             ✕
           </button>
         </div>
@@ -329,12 +332,12 @@ function Modal({ title, onClose, children, wide }: { title: string; onClose: () 
 function SetViewer({ id, onClose }: { id: string; onClose: () => void }) {
   const { d, error } = useSetDetails(id);
   return (
-    <Modal title={d ? `${d.set.publicId} · ${d.set.plateDisplay}` : 'Photo set'} onClose={onClose} wide>
+    <Modal title={d ? `${d.set.publicId} · ${d.set.plateDisplay}` : 'ชุดรูป'} onClose={onClose} wide>
       {error && <p className="banner banner-bad">{error}</p>}
       {!d && !error && <span className="spinner" />}
       {d && !d.imagesAvailable && (
         <div className="banner banner-warn">
-          Images of this set are not loaded here. {d.set.driveUrl && <a className="btn btn-sm btn-primary" href={d.set.driveUrl} target="_blank" rel="noopener noreferrer">Open set in Drive ↗</a>}
+          ชุดนี้ไม่โหลดรูปในหน้านี้ {d.set.driveUrl && <a className="btn btn-sm btn-primary" href={d.set.driveUrl} target="_blank" rel="noopener noreferrer">เปิดชุดใน Drive ↗</a>}
         </div>
       )}
       {d?.imagesAvailable && (
@@ -348,11 +351,11 @@ function SetViewer({ id, onClose }: { id: string; onClose: () => void }) {
                     <img src={img.displayUrl} alt={`${s.label} — ${d.set.publicId}`} loading="lazy" />
                   </a>
                 ) : (
-                  <div className="set-photo-missing">{s.required ? 'Missing' : 'Skipped'}</div>
+                  <div className="set-photo-missing">{s.required ? 'ไม่มีรูป' : 'ข้ามขั้นตอน'}</div>
                 )}
                 <figcaption>
                   <strong>{String(s.index + 1).padStart(2, '0')} {s.label}</strong>
-                  {img && <span className="small muted">{img.source === 'camera' ? 'Camera' : 'Uploaded file'} · received {formatBangkok(img.serverReceivedAt)}</span>}
+                  {img && <span className="small muted">{img.source === 'camera' ? 'กล้อง' : 'อัปโหลดไฟล์'} · เซิร์ฟเวอร์รับ {formatBangkok(img.serverReceivedAt)}</span>}
                 </figcaption>
               </figure>
             );
@@ -386,55 +389,55 @@ function SetDetails({ id, onClose, onChanged }: { id: string; onClose: () => voi
   }
 
   return (
-    <Modal title={d ? `Details · ${d.set.publicId}` : 'Details'} onClose={onClose} wide>
+    <Modal title={d ? `รายละเอียด · ${d.set.publicId}` : 'รายละเอียด'} onClose={onClose} wide>
       {error && <p className="banner banner-bad">{error}</p>}
       {!d && !error && <span className="spinner" />}
       {d && (
         <div className="details">
           {!d.recent && (
             <p className="banner banner-warn">
-              Older set: images and thumbnails are not loaded in the dashboard. The full set is in its Drive folder.
+              ชุดเก่า: แดชบอร์ดจะไม่โหลดรูปและภาพย่อ ดูรูปครบทั้งชุดได้ในโฟลเดอร์ Drive
             </p>
           )}
           <dl className="kv">
-            <dt>Round start</dt>
+            <dt>เริ่มรอบ</dt>
             <dd>
-              {formatBangkok(d.set.startedAt)} <span className="muted small">({d.startedAtSource === 'device' ? 'first image, device clock' : 'server receipt time'})</span>
+              {formatBangkok(d.set.startedAt)} <span className="muted small">({d.startedAtSource === 'device' ? 'รูปแรก ตามนาฬิกาเครื่อง' : 'เวลาที่เซิร์ฟเวอร์รับ'})</span>
             </dd>
-            <dt>Operational date</dt>
+            <dt>วันที่ปฏิบัติงาน</dt>
             <dd>{d.set.opDate}</dd>
-            <dt>Operator</dt>
+            <dt>ผู้ถ่าย</dt>
             <dd>{d.set.operator.name}</dd>
-            <dt>Status</dt>
+            <dt>สถานะ</dt>
             <dd>
-              {d.set.status} {d.finalizedAt && <span className="muted small">· saved {formatBangkok(d.finalizedAt)}</span>}
+              {STATUS_TH[d.set.status] ?? d.set.status} {d.finalizedAt && <span className="muted small">· บันทึกเมื่อ {formatBangkok(d.finalizedAt)}</span>}
             </dd>
-            <dt>Images</dt>
+            <dt>รูป</dt>
             <dd>
-              {d.set.activeCount} active / {d.set.requiredCount} required
+              ใช้งาน {d.set.activeCount} รูป / บังคับ {d.set.requiredCount} รูป
             </dd>
-            <dt>Workflow version</dt>
+            <dt>เวอร์ชันขั้นตอน</dt>
             <dd>v{d.workflowVersionId}</dd>
-            <dt>Drive folder</dt>
+            <dt>โฟลเดอร์ Drive</dt>
             <dd>
               <span className="mono small">{d.drive.folderName ?? '—'}</span>{' '}
               {d.set.driveUrl && (
                 <a className="btn btn-sm btn-primary" href={d.set.driveUrl} target="_blank" rel="noopener noreferrer">
-                  Open set in Drive ↗
+                  เปิดชุดใน Drive ↗
                 </a>
               )}
             </dd>
           </dl>
 
           <section className="sub-card">
-            <h3>License plate</h3>
+            <h3>ทะเบียนรถ</h3>
             <p className="small muted">
-              Source: {d.plate.source}
-              {d.plate.confidence != null && ` · OCR confidence ${(d.plate.confidence * 100).toFixed(0)}%`} · OCR: {d.plate.ocrStatus} · Fallback label: “{d.plate.unknownLabel}”
+              ที่มา: {PLATE_SRC_TH[d.plate.source] ?? d.plate.source}
+              {d.plate.confidence != null && ` · ความมั่นใจ OCR ${(d.plate.confidence * 100).toFixed(0)}%`} · สถานะ OCR: {d.plate.ocrStatus} · คำแทนเมื่อไม่ทราบทะเบียน: “{d.plate.unknownLabel}”
             </p>
             {d.plate.raw && (
               <details>
-                <summary className="small">Raw OCR output</summary>
+                <summary className="small">ผลลัพธ์ OCR ดิบ</summary>
                 <pre className="raw">{d.plate.raw}</pre>
               </details>
             )}
@@ -447,7 +450,7 @@ function SetDetails({ id, onClose, onChanged }: { id: string; onClose: () => voi
                   setMsg('');
                   try {
                     await api('PUT', `/api/admin/sets/${id}/plate`, { plate });
-                    setMsg('Plate saved. The Drive folder keeps the same ID and is renamed.');
+                    setMsg('บันทึกทะเบียนแล้ว โฟลเดอร์ใน Drive ถูกเปลี่ยนชื่อ โดยยังเป็นโฟลเดอร์เดิม (ID เดิม)');
                     reload();
                     onChanged();
                   } catch (err) {
@@ -457,15 +460,15 @@ function SetDetails({ id, onClose, onChanged }: { id: string; onClose: () => voi
                   }
                 }}
               >
-                <input className="input" value={plate} onChange={(e) => setPlate(e.target.value)} placeholder="e.g. 1กข 2345" aria-label="Corrected plate" />
-                <button className="btn btn-primary btn-sm" disabled={busy || d.set.status === 'open'}>Save correction</button>
+                <input className="input" value={plate} onChange={(e) => setPlate(e.target.value)} placeholder="เช่น 1กข 2345" aria-label="ทะเบียนที่แก้ไข" />
+                <button className="btn btn-primary btn-sm" disabled={busy || d.set.status === 'open'}>บันทึกการแก้ไข</button>
               </form>
             )}
             {d.plate.history.length > 0 && (
               <ul className="history-list small">
                 {d.plate.history.map((h: any) => (
                   <li key={h.id}>
-                    {formatBangkok(h.at)} · {h.source === 'manual' ? `corrected by ${h.actor_name ?? '?'}` : 'OCR'}: “{h.old_text ?? '—'}” → “{h.new_text ?? '—'}”
+                    {formatBangkok(h.at)} · {h.source === 'manual' ? `แก้ไขโดย ${h.actor_name ?? '?'}` : 'OCR'}: “{h.old_text ?? '—'}” → “{h.new_text ?? '—'}”
                   </li>
                 ))}
               </ul>
@@ -473,19 +476,19 @@ function SetDetails({ id, onClose, onChanged }: { id: string; onClose: () => voi
           </section>
 
           <section className="sub-card">
-            <h3>Images and timestamps</h3>
+            <h3>รูปและเวลา</h3>
             <div className="table-scroll">
               <table className="table table-compact">
                 <thead>
                   <tr>
-                    <th>Step</th>
-                    <th>Ver.</th>
-                    <th>State</th>
-                    <th>Source</th>
-                    <th>Captured (device clock)</th>
-                    <th>Server received</th>
-                    <th>Stored in Drive</th>
-                    <th>EXIF (unverified)</th>
+                    <th>ขั้นตอน</th>
+                    <th>ครั้งที่</th>
+                    <th>สถานะ</th>
+                    <th>ที่มา</th>
+                    <th>เวลาถ่าย (นาฬิกาเครื่อง)</th>
+                    <th>เซิร์ฟเวอร์รับ</th>
+                    <th>บันทึกลง Drive</th>
+                    <th>EXIF (ไม่ได้ยืนยัน)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -497,9 +500,9 @@ function SetDetails({ id, onClose, onChanged }: { id: string; onClose: () => voi
                               {String(s.index + 1).padStart(2, '0')} {s.label}
                             </td>
                             <td>v{i.version}</td>
-                            <td>{i.active ? (i.uploadedAt ? 'active' : 'uploading') : 'replaced'}</td>
-                            <td>{i.source === 'camera' ? 'Camera' : 'Uploaded file'}</td>
-                            <td>{i.source === 'camera' ? formatBangkok(i.captureTimeDevice) : <span className="muted">not available</span>}</td>
+                            <td>{i.active ? (i.uploadedAt ? 'ใช้งาน' : 'กำลังอัปโหลด') : 'ถูกแทนที่'}</td>
+                            <td>{i.source === 'camera' ? 'กล้อง' : 'อัปโหลดไฟล์'}</td>
+                            <td>{i.source === 'camera' ? formatBangkok(i.captureTimeDevice) : <span className="muted">ไม่มีข้อมูล</span>}</td>
                             <td>{formatBangkok(i.serverReceivedAt)}</td>
                             <td>{i.uploadedAt ? formatBangkok(i.uploadedAt) : '—'}</td>
                             <td>{i.exifTimeUnverified ?? '—'}</td>
@@ -511,7 +514,7 @@ function SetDetails({ id, onClose, onChanged }: { id: string; onClose: () => voi
                               {String(s.index + 1).padStart(2, '0')} {s.label}
                             </td>
                             <td colSpan={7} className="muted">
-                              {s.required ? 'missing' : 'skipped'}
+                              {s.required ? 'ไม่มีรูป' : 'ข้ามขั้นตอน'}
                             </td>
                           </tr>,
                         ],
@@ -519,27 +522,27 @@ function SetDetails({ id, onClose, onChanged }: { id: string; onClose: () => voi
                 </tbody>
               </table>
             </div>
-            <p className="small muted">“Captured” is the phone’s clock at the moment of capture. “Server received” and “Stored in Drive” are server times. EXIF dates of uploaded files are never treated as proof of capture time.</p>
+            <p className="small muted">“เวลาถ่าย” คือนาฬิกาของมือถือขณะถ่าย ส่วน “เซิร์ฟเวอร์รับ” และ “บันทึกลง Drive” เป็นเวลาของเซิร์ฟเวอร์ วันที่ EXIF ในไฟล์ที่อัปโหลดไม่ถือเป็นหลักฐานเวลาถ่ายจริง</p>
           </section>
 
           {msg && <p className="banner banner-ok">{msg}</p>}
 
           <div className="details-actions">
             {me.can('sets.hide') && !d.hiddenAt && !d.removedAt && (
-              <button className="btn" disabled={busy} onClick={() => void act('hide', 'Hide this whole set from normal history? Drive files are not touched.')}>Hide set</button>
+              <button className="btn" disabled={busy} onClick={() => void act('hide', 'ซ่อนชุดนี้ทั้งชุดจากประวัติปกติ? ไฟล์ใน Drive จะไม่ถูกแตะต้อง')}>ซ่อนชุด</button>
             )}
             {me.can('sets.hide') && d.hiddenAt && !d.removedAt && (
-              <button className="btn" disabled={busy} onClick={() => void act('unhide', 'Show this set in normal history again?')}>Unhide set</button>
+              <button className="btn" disabled={busy} onClick={() => void act('unhide', 'แสดงชุดนี้ในประวัติปกติอีกครั้ง?')}>เลิกซ่อน</button>
             )}
             {me.can('sets.remove') && !d.removedAt && (
-              <button className="btn btn-danger" disabled={busy} onClick={() => void act('remove', 'Remove this whole set from application history? Its Drive folder and files are NOT deleted.')}>
-                Remove from history
+              <button className="btn btn-danger" disabled={busy} onClick={() => void act('remove', 'ลบชุดนี้ทั้งชุดออกจากประวัติในแอป? โฟลเดอร์และไฟล์ใน Drive จะไม่ถูกลบ')}>
+                ลบออกจากประวัติ
               </button>
             )}
             {me.can('sets.restore') && d.removedAt && (
-              <button className="btn" disabled={busy} onClick={() => void act('restore', 'Restore this set to application history?')}>Restore set</button>
+              <button className="btn" disabled={busy} onClick={() => void act('restore', 'กู้คืนชุดนี้กลับเข้าประวัติ?')}>กู้คืนชุด</button>
             )}
-            <span className="small muted">Hide/remove apply to the whole set and never delete anything from Google Drive.</span>
+            <span className="small muted">การซ่อน/ลบมีผลกับทั้งชุด และไม่ลบอะไรออกจาก Google Drive</span>
           </div>
         </div>
       )}

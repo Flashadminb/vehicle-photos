@@ -97,7 +97,7 @@ admin.post('/me/password', async (c) => {
   const { currentPassword, newPassword } = await readJson<{ currentPassword: string; newPassword: string }>(c);
   const user = c.get('user');
   const row = await c.env.DB.prepare(`SELECT password_hash FROM users WHERE id = ?`).bind(user.id).first<any>();
-  if (!(await verifyPassword(String(currentPassword ?? ''), row.password_hash))) throw new ApiError(400, 'wrong_password', 'Current password is incorrect.');
+  if (!(await verifyPassword(String(currentPassword ?? ''), row.password_hash))) throw new ApiError(400, 'wrong_password', 'รหัสผ่านปัจจุบันไม่ถูกต้อง');
   const hash = await createPasswordHash(c.env, validateNewPassword(newPassword));
   await c.env.DB.prepare(`UPDATE users SET password_hash = ?, must_change_password = 0, updated_at = ? WHERE id = ?`).bind(hash, Date.now(), user.id).run();
   await audit(c.env, user, 'user.password_changed', { type: 'user', id: user.id }, undefined, clientIp(c));
@@ -177,7 +177,7 @@ async function serveImage(c: any, imageId: string, kind: CacheKind, allowOld: bo
   const settings = await getSettings(env);
   const recent = isRecent(round.op_date, settings, Date.now());
   if (!allowOld && !recent && settings.imageDisplayMode !== 'cache') {
-    throw new ApiError(403, 'old_set', 'Images of older sets are not loaded here. Open the set in Drive.');
+    throw new ApiError(403, 'old_set', 'ชุดเก่าไม่โหลดรูปในหน้านี้ กรุณาเปิดชุดใน Drive');
   }
   const cached = (await getCache(env, imageId, kind)) ?? (kind === 'thumb' ? await getCache(env, imageId, 'display') : null);
   if (cached) {
@@ -185,7 +185,7 @@ async function serveImage(c: any, imageId: string, kind: CacheKind, allowOld: bo
       headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=3600', 'X-Image-Source': 'cache' },
     });
   }
-  if (!recent && !allowOld) throw new ApiError(404, 'not_cached', 'This image is no longer cached. Open the set in Drive.');
+  if (!recent && !allowOld) throw new ApiError(404, 'not_cached', 'รูปนี้ไม่อยู่ในแคชแล้ว กรุณาเปิดชุดใน Drive');
   const res = await getDrive(env, baseUrl(c.req.url)).download(img.drive_display_file_id);
   return new Response(res.body, {
     headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=3600', 'X-Image-Source': 'drive' },
@@ -200,8 +200,8 @@ admin.get('/images/:id/:kind{thumb|display}', requirePermission('sets.view'), as
 admin.post('/exports', requirePermission('sets.export'), async (c) => {
   const { setIds } = await readJson<{ setIds: string[] }>(c);
   const settings = await getSettings(c.env);
-  if (!Array.isArray(setIds) || setIds.length === 0) throw badRequest('Select at least one set.');
-  if (setIds.length > settings.exportMaxSets) throw badRequest(`At most ${settings.exportMaxSets} sets per export.`);
+  if (!Array.isArray(setIds) || setIds.length === 0) throw badRequest('กรุณาเลือกอย่างน้อย 1 ชุด');
+  if (setIds.length > settings.exportMaxSets) throw badRequest(`ส่งออกได้สูงสุด ${settings.exportMaxSets} ชุดต่อครั้ง`);
   const user = c.get('user');
   const drive = getDrive(c.env, baseUrl(c.req.url));
   const sets = [];
@@ -346,7 +346,7 @@ admin.put('/translations', requirePermission('config.edit'), async (c) => {
 // ---------- Members & permissions ----------
 function assertCanManage(actor: AuthUser, targetRole: Role, newRole?: Role) {
   const roles = manageableRoles(actor.role);
-  if (!roles.includes(targetRole) || (newRole && !roles.includes(newRole))) throw forbidden('You cannot manage users with this role.');
+  if (!roles.includes(targetRole) || (newRole && !roles.includes(newRole))) throw forbidden('คุณจัดการผู้ใช้บทบาทนี้ไม่ได้');
 }
 
 function tempPassword() {
@@ -385,7 +385,7 @@ admin.post('/users', requirePermission('users.manage'), async (c) => {
       .bind(id, username, str(body.displayName, 'displayName', { max: 80 }), body.role, await createPasswordHash(c.env, password), now, now)
       .run();
   } catch (e) {
-    if (String(e).includes('UNIQUE')) throw new ApiError(409, 'username_taken', 'That username is already taken.');
+    if (String(e).includes('UNIQUE')) throw new ApiError(409, 'username_taken', 'ชื่อผู้ใช้นี้ถูกใช้แล้ว');
     throw e;
   }
   await audit(c.env, actor, 'user.created', { type: 'user', id }, { username, role: body.role }, clientIp(c));
@@ -401,11 +401,11 @@ admin.patch('/users/:id', requirePermission('users.manage'), async (c) => {
   if (body.role && !ROLES.includes(body.role)) throw badRequest('Invalid role.');
   assertCanManage(actor, target.role, body.role);
   if (id === actor.id && (body.disabled || (body.role && body.role !== actor.role))) {
-    throw badRequest('You cannot disable yourself or change your own role.');
+    throw badRequest('ปิดใช้งานตัวเองหรือเปลี่ยนบทบาทตัวเองไม่ได้');
   }
   if (target.role === 'super_admin' && (body.disabled || (body.role && body.role !== 'super_admin'))) {
     const n = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM users WHERE role = 'super_admin' AND disabled = 0`).first<{ n: number }>();
-    if ((n?.n ?? 0) <= 1) throw badRequest('At least one active Super Admin is required.');
+    if ((n?.n ?? 0) <= 1) throw badRequest('ต้องมีผู้ดูแลสูงสุดที่ใช้งานอยู่อย่างน้อย 1 คน');
   }
   const now = Date.now();
   await c.env.DB.prepare(

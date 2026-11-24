@@ -27,7 +27,7 @@ export async function api<T = any>(method: string, path: string, body?: unknown,
     res = await fetch(path, { ...init, method, headers, body: payload, credentials: 'same-origin' });
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw e;
-    throw new ApiError(0, 'network', 'Network error — check the connection.');
+    throw new ApiError(0, 'network', 'เชื่อมต่อเครือข่ายไม่ได้ — ตรวจสอบอินเทอร์เน็ต');
   }
   const text = await res.text();
   let data: any = null;

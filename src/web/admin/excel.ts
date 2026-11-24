@@ -34,16 +34,16 @@ export async function exportSetsToExcel(
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Vehicle Photos';
   wb.created = new Date();
-  const ws = wb.addWorksheet('Photo sets', { views: [{ state: 'frozen', ySplit: 1 }] });
+  const ws = wb.addWorksheet('ชุดรูป', { views: [{ state: 'frozen', ySplit: 1 }] });
 
   // One image column per step label (sets may come from different workflow versions).
   const stepLabels: string[] = [];
   for (const s of sets) for (const st of s.steps) if (!stepLabels.includes(st.label)) stepLabels.push(st.label);
-  const fixed = ['Round start (Asia/Bangkok)', 'Photo set ID', 'License plate', 'Operator', 'Images', 'Status'];
+  const fixed = ['เริ่มรอบ (เวลาไทย)', 'รหัสชุดรูป', 'ทะเบียนรถ', 'ผู้ถ่าย', 'จำนวนรูป', 'สถานะ'];
   ws.columns = [
     ...fixed.map((h, i) => ({ header: h, key: `c${i}`, width: [22, 14, 16, 20, 10, 12][i] })),
     ...stepLabels.map((h) => ({ header: h, key: `s:${h}`, width: IMG_W / 7 + 2 })),
-    { header: 'Drive folder', key: 'drive', width: 18 },
+    { header: 'โฟลเดอร์ Drive', key: 'drive', width: 18 },
   ];
   ws.getRow(1).font = { bold: true };
   ws.getRow(1).alignment = { vertical: 'middle' };
@@ -57,17 +57,17 @@ export async function exportSetsToExcel(
     const s = sets[r];
     const rowIndex = r + 2;
     const row = ws.getRow(rowIndex);
-    row.values = [formatBangkok(s.startedAt), s.publicId, s.plateDisplay, s.operator.name, `${s.activeCount}/${s.requiredCount}`, s.status];
+    row.values = [formatBangkok(s.startedAt), s.publicId, s.plateDisplay, s.operator.name, `${s.activeCount}/${s.requiredCount}`, s.status === 'finalized' ? 'เสร็จสมบูรณ์' : s.status === 'open' ? 'กำลังถ่าย' : 'ถูกทิ้งไว้'];
     row.height = IMG_H * 0.75 + 6; // points
     row.alignment = { vertical: 'middle', wrapText: true };
     if (s.driveUrl) {
       const url = s.driveUrl.startsWith('http') ? s.driveUrl : location.origin + s.driveUrl;
-      row.getCell(fixed.length + stepLabels.length + 1).value = { text: 'Open folder', hyperlink: url };
+      row.getCell(fixed.length + stepLabels.length + 1).value = { text: 'เปิดโฟลเดอร์', hyperlink: url };
     }
     // Fetch this set's images with limited parallelism.
     const jobs = s.steps.filter((st) => st.image).map((st) => async () => {
       const res = await fetch(`/api/admin/exports/${exportId}/images/${st.image!.id}`, { signal, credentials: 'same-origin' });
-      if (!res.ok) throw new Error(`Image ${s.publicId}/${st.label} failed (${res.status})`);
+      if (!res.ok) throw new Error(`โหลดรูป ${s.publicId}/${st.label} ไม่สำเร็จ (${res.status})`);
       const buf = await res.arrayBuffer();
       const bmp = await createImageBitmap(new Blob([buf]));
       const scale = Math.min(IMG_W / bmp.width, IMG_H / bmp.height);

@@ -4,12 +4,12 @@ import { formatBangkok } from '../../shared/time';
 import type { Role } from '../../shared/types';
 import { useMe } from './context';
 
-const ROLE_LABEL: Record<Role, string> = { super_admin: 'Super Admin', admin: 'Admin', reviewer: 'Reviewer', operator: 'Field Operator' };
+const ROLE_LABEL: Record<Role, string> = { super_admin: 'ผู้ดูแลสูงสุด', admin: 'ผู้ดูแล', reviewer: 'ผู้ตรวจสอบ', operator: 'พนักงานภาคสนาม' };
 const ROLE_HELP: Record<Role, string> = {
-  super_admin: 'Everything, incl. Drive connection, storage, restoring removed sets, managing admins.',
-  admin: 'History, hide/remove, plate correction, workflow & languages, reviewers and operators.',
-  reviewer: 'Read-only history, set details and Excel export.',
-  operator: 'Field app only. No dashboard access.',
+  super_admin: 'ทำได้ทุกอย่าง รวมถึงเชื่อม Drive, จัดการพื้นที่, กู้คืนชุดที่ลบ และจัดการผู้ดูแล',
+  admin: 'ดูประวัติ, ซ่อน/ลบชุด, แก้ทะเบียน, ตั้งค่าขั้นตอนและภาษา, จัดการผู้ตรวจสอบและพนักงาน',
+  reviewer: 'ดูประวัติ รายละเอียด และส่งออก Excel ได้อย่างเดียว',
+  operator: 'ใช้ได้เฉพาะแอปภาคสนาม เข้าแดชบอร์ดไม่ได้',
 };
 
 export function Members() {
@@ -37,8 +37,8 @@ export function Members() {
   return (
     <div className="page">
       <div className="page-head">
-        <h1>Members & permissions</h1>
-        <span className="muted small">Roles are enforced on the server for every action.</span>
+        <h1>สมาชิกและสิทธิ์</h1>
+        <span className="muted small">สิทธิ์ถูกตรวจสอบที่เซิร์ฟเวอร์ทุกครั้ง</span>
       </div>
       {msg && (
         <p className={`banner ${msg.ok ? 'banner-ok' : 'banner-bad'}`} role="status">
@@ -46,28 +46,28 @@ export function Members() {
         </p>
       )}
       <section className="card section">
-        <h2>Add a member</h2>
+        <h2>เพิ่มสมาชิก</h2>
         <form
           className="form-grid"
           onSubmit={(e) => {
             e.preventDefault();
             void run(
               () => api('POST', '/api/admin/users', form),
-              (r) => `Created ${form.username}. Temporary password: ${r.temporaryPassword} — share it privately; they must change it at first sign-in.`,
+              (r) => `สร้าง ${form.username} แล้ว รหัสผ่านชั่วคราว: ${r.temporaryPassword} — ส่งให้เจ้าตัวแบบส่วนตัว และต้องเปลี่ยนรหัสเมื่อเข้าระบบครั้งแรก`,
             );
             setForm({ username: '', displayName: '', role: 'operator' });
           }}
         >
           <label className="field">
-            <span>Username</span>
+            <span>ชื่อผู้ใช้</span>
             <input className="input" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} pattern="[A-Za-z0-9._\-]{3,40}" required />
           </label>
           <label className="field">
-            <span>Display name</span>
+            <span>ชื่อที่แสดง</span>
             <input className="input" value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} required />
           </label>
           <label className="field">
-            <span>Role</span>
+            <span>บทบาท</span>
             <select className="input" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Role })}>
               {me.manageableRoles.map((r) => (
                 <option key={r} value={r}>
@@ -78,7 +78,7 @@ export function Members() {
           </label>
           <div className="field">
             <span>&nbsp;</span>
-            <button className="btn btn-primary">Create member</button>
+            <button className="btn btn-primary">สร้างสมาชิก</button>
           </div>
           <p className="small muted span-all">{ROLE_HELP[form.role]}</p>
         </form>
@@ -89,11 +89,11 @@ export function Members() {
           <table className="table">
             <thead>
               <tr>
-                <th>Member</th>
-                <th>Role</th>
-                <th>Status</th>
-                <th>Last active</th>
-                <th>Actions</th>
+                <th>สมาชิก</th>
+                <th>บทบาท</th>
+                <th>สถานะ</th>
+                <th>ใช้งานล่าสุด</th>
+                <th>การจัดการ</th>
               </tr>
             </thead>
             <tbody>
@@ -107,7 +107,7 @@ export function Members() {
                     </td>
                     <td>
                       {editable ? (
-                        <select className="input input-sm" value={u.role} onChange={(e) => void run(() => api('PATCH', `/api/admin/users/${u.id}`, { role: e.target.value }), () => 'Role changed; their sessions were signed out.')} aria-label={`Role of ${u.username}`}>
+                        <select className="input input-sm" value={u.role} onChange={(e) => void run(() => api('PATCH', `/api/admin/users/${u.id}`, { role: e.target.value }), () => 'เปลี่ยนบทบาทแล้ว และออกจากระบบทุกอุปกรณ์ของผู้ใช้นี้')} aria-label={`บทบาทของ ${u.username}`}>
                           {me.manageableRoles.map((r) => (
                             <option key={r} value={r}>
                               {ROLE_LABEL[r]}
@@ -120,37 +120,37 @@ export function Members() {
                     </td>
                     <td>
                       <div className="pills">
-                        {u.disabled ? <span className="pill pill-bad">Disabled</span> : <span className="pill pill-ok">Active</span>}
-                        {u.must_change_password ? <span className="pill pill-warn">Temp password</span> : null}
-                        {u.has_pin ? <span className="pill">PIN set</span> : null}
-                        {u.active_sessions > 0 && <span className="pill pill-info">{u.active_sessions} session(s)</span>}
+                        {u.disabled ? <span className="pill pill-bad">ปิดใช้งาน</span> : <span className="pill pill-ok">ใช้งานอยู่</span>}
+                        {u.must_change_password ? <span className="pill pill-warn">รหัสผ่านชั่วคราว</span> : null}
+                        {u.has_pin ? <span className="pill">ตั้ง PIN แล้ว</span> : null}
+                        {u.active_sessions > 0 && <span className="pill pill-info">เข้าระบบอยู่ {u.active_sessions} อุปกรณ์</span>}
                       </div>
                     </td>
                     <td className="small">{u.last_seen_at ? formatBangkok(u.last_seen_at) : '—'}</td>
                     <td>
                       {editable && (
                         <div className="row-actions">
-                          <button className="btn btn-sm" onClick={() => confirm(`Reset password for ${u.username}?`) && void run(() => api('POST', `/api/admin/users/${u.id}/reset-password`), (r) => `Temporary password for ${u.username}: ${r.temporaryPassword}`)}>
-                            Reset password
+                          <button className="btn btn-sm" onClick={() => confirm(`รีเซ็ตรหัสผ่านของ ${u.username}?`) && void run(() => api('POST', `/api/admin/users/${u.id}/reset-password`), (r) => `รหัสผ่านชั่วคราวของ ${u.username}: ${r.temporaryPassword}`)}>
+                            รีเซ็ตรหัสผ่าน
                           </button>
-                          <button className="btn btn-sm" onClick={() => void run(() => api('POST', `/api/admin/users/${u.id}/revoke-sessions`), () => `Signed ${u.username} out everywhere.`)}>
-                            Revoke access
+                          <button className="btn btn-sm" onClick={() => void run(() => api('POST', `/api/admin/users/${u.id}/revoke-sessions`), () => `ออกจากระบบ ${u.username} ทุกอุปกรณ์แล้ว`)}>
+                            เพิกถอนการเข้าถึง
                           </button>
                           <button
                             className="btn btn-sm"
                             onClick={() => {
-                              const pin = prompt(`New 4–8 digit PIN for ${u.username} (leave empty to remove):`);
+                              const pin = prompt(`PIN ใหม่ 4–8 หลักสำหรับ ${u.username} (เว้นว่างเพื่อลบ PIN):`);
                               if (pin === null) return;
-                              void run(() => api('PUT', `/api/admin/users/${u.id}/pin`, { pin: pin.trim() || null }), () => (pin.trim() ? 'PIN set.' : 'PIN removed.'));
+                              void run(() => api('PUT', `/api/admin/users/${u.id}/pin`, { pin: pin.trim() || null }), () => (pin.trim() ? 'ตั้ง PIN แล้ว' : 'ลบ PIN แล้ว'));
                             }}
                           >
-                            Set PIN
+                            ตั้ง PIN
                           </button>
                           <button
                             className={`btn btn-sm ${u.disabled ? '' : 'btn-danger'}`}
-                            onClick={() => void run(() => api('PATCH', `/api/admin/users/${u.id}`, { disabled: !u.disabled }), () => (u.disabled ? 'Member enabled.' : 'Member disabled and signed out.'))}
+                            onClick={() => void run(() => api('PATCH', `/api/admin/users/${u.id}`, { disabled: !u.disabled }), () => (u.disabled ? 'เปิดใช้งานสมาชิกแล้ว' : 'ปิดใช้งานและออกจากระบบแล้ว'))}
                           >
-                            {u.disabled ? 'Enable' : 'Disable'}
+                            {u.disabled ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}
                           </button>
                         </div>
                       )}

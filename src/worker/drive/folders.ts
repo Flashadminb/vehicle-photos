@@ -55,7 +55,7 @@ export async function ensureDateFolder(env: Env, drive: DriveClient, rootId: str
     }
     await sleep(250 + attempt * 100);
   }
-  throw unavailable('drive_busy', 'Drive folder is being prepared. Retrying shortly.');
+  throw unavailable('drive_busy', 'กำลังเตรียมโฟลเดอร์ใน Drive ระบบจะลองใหม่ในไม่ช้า');
 }
 
 /** Get-or-create the round folder. Same lease pattern, stored on the round row. */
@@ -96,7 +96,7 @@ export async function ensureRoundFolder(env: Env, drive: DriveClient, roundId: s
     }
     await sleep(250 + attempt * 100);
   }
-  throw unavailable('drive_busy', 'Drive folder is being prepared. Retrying shortly.');
+  throw unavailable('drive_busy', 'กำลังเตรียมโฟลเดอร์ใน Drive ระบบจะลองใหม่ในไม่ช้า');
 }
 
 /**

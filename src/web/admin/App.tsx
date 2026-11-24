@@ -8,13 +8,15 @@ import { Members } from './Members';
 import { DriveStorage } from './DriveStorage';
 import { AuditLog } from './AuditLog';
 
+const ROLE_TH: Record<string, string> = { super_admin: 'ผู้ดูแลสูงสุด', admin: 'ผู้ดูแล', reviewer: 'ผู้ตรวจสอบ', operator: 'พนักงานภาคสนาม' };
+
 const NAV = [
-  { path: 'history', label: 'Photo set history', perm: 'sets.view', icon: 'M4 6h16M4 12h16M4 18h10' },
-  { path: 'field', label: 'Field app configuration', perm: 'config.edit', icon: 'M8 3h8a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM11 18h2' },
-  { path: 'workflow', label: 'Capture workflow & languages', perm: 'config.edit', icon: 'M5 6h4v4H5zM15 6h4v4h-4zM10 16h4v4h-4zM7 10v3h10v-3M12 13v3' },
-  { path: 'members', label: 'Members & permissions', perm: 'users.manage', icon: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21a7 7 0 0 1 14 0M17 11a3 3 0 1 0 0-6M22 21a6 6 0 0 0-4-5.6' },
-  { path: 'drive', label: 'Google Drive & retention', perm: 'storage.view', icon: 'M8 3h8l6 10-4 7H6l-4-7zM2 13h20M8 3l8 17M16 3 8 20' },
-  { path: 'audit', label: 'Audit log', perm: 'audit.view', icon: 'M6 3h9l4 4v14H6zM9 12h7M9 16h7M9 8h3' },
+  { path: 'history', label: 'ประวัติชุดรูป', perm: 'sets.view', icon: 'M4 6h16M4 12h16M4 18h10' },
+  { path: 'field', label: 'ตั้งค่าแอปภาคสนาม', perm: 'config.edit', icon: 'M8 3h8a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM11 18h2' },
+  { path: 'workflow', label: 'ขั้นตอนการถ่ายและภาษา', perm: 'config.edit', icon: 'M5 6h4v4H5zM15 6h4v4h-4zM10 16h4v4h-4zM7 10v3h10v-3M12 13v3' },
+  { path: 'members', label: 'สมาชิกและสิทธิ์', perm: 'users.manage', icon: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21a7 7 0 0 1 14 0M17 11a3 3 0 1 0 0-6M22 21a6 6 0 0 0-4-5.6' },
+  { path: 'drive', label: 'Google Drive และการเก็บรักษา', perm: 'storage.view', icon: 'M8 3h8l6 10-4 7H6l-4-7zM2 13h20M8 3l8 17M16 3 8 20' },
+  { path: 'audit', label: 'บันทึกการใช้งาน', perm: 'audit.view', icon: 'M6 3h9l4 4v14H6zM9 12h7M9 16h7M9 8h3' },
 ];
 
 function useHashRoute() {
@@ -46,7 +48,7 @@ export function App() {
 
   const value = useMemo<Me | null>(() => (me ? { ...me, can: (p: string) => me.permissions.includes(p) } : null), [me]);
 
-  if (state === 'loading') return <div className="center"><span className="spinner" aria-label="Loading" /></div>;
+  if (state === 'loading') return <div className="center"><span className="spinner" aria-label="กำลังโหลด" /></div>;
   if (state === 'login' || !value) return <Login onDone={load} />;
   if (value.user.mustChangePassword) return <ChangePassword onDone={load} />;
 
@@ -61,10 +63,10 @@ export function App() {
             <span className="brand-mark" aria-hidden>◉</span>
             <div>
               <div className="brand-name">Vehicle Photos</div>
-              <div className="small muted">Admin dashboard</div>
+              <div className="small muted">แดชบอร์ดผู้ดูแล</div>
             </div>
           </div>
-          <nav aria-label="Main">
+          <nav aria-label="เมนูหลัก">
             {allowed.map((n) => (
               <a key={n.path} href={`#/${n.path}`} className={`nav-link ${active?.path === n.path ? 'is-active' : ''}`} aria-current={active?.path === n.path ? 'page' : undefined}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -77,7 +79,7 @@ export function App() {
           <div className="sidebar-foot">
             <div className="small">
               <strong>{value.user.displayName}</strong>
-              <div className="muted">{value.user.role.replace('_', ' ')}</div>
+              <div className="muted">{ROLE_TH[value.user.role] ?? value.user.role}</div>
             </div>
             <button
               className="btn btn-sm"
@@ -86,12 +88,12 @@ export function App() {
                 setState('login');
               }}
             >
-              Sign out
+              ออกจากระบบ
             </button>
           </div>
         </aside>
         <main className="content">
-          {value.demo && <div className="banner banner-demo">DEMO MODE — Google Drive is emulated locally and demo accounts exist. Do not use for real data.</div>}
+          {value.demo && <div className="banner banner-demo">โหมด DEMO — Google Drive ถูกจำลองในเครื่องและมีบัญชีทดสอบ ห้ามใช้กับข้อมูลจริง</div>}
           {active?.path === 'history' && <History />}
           {active?.path === 'field' && <FieldConfig />}
           {active?.path === 'workflow' && <WorkflowConfig />}
@@ -127,18 +129,18 @@ function Login({ onDone }: { onDone: () => void }) {
           }
         }}
       >
-        <h1>Admin dashboard</h1>
-        <p className="muted small">Vehicle Photos — sign in with an administrator or reviewer account.</p>
+        <h1>แดชบอร์ดผู้ดูแล</h1>
+        <p className="muted small">Vehicle Photos — เข้าสู่ระบบด้วยบัญชีผู้ดูแลหรือผู้ตรวจสอบ</p>
         <label className="field">
-          <span>Username</span>
+          <span>ชื่อผู้ใช้</span>
           <input className="input" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required />
         </label>
         <label className="field">
-          <span>Password</span>
+          <span>รหัสผ่าน</span>
           <input className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         </label>
         {error && <p className="banner banner-bad" role="alert">{error}</p>}
-        <button className="btn btn-primary" disabled={busy}>{busy ? <span className="spinner" /> : 'Sign in'}</button>
+        <button className="btn btn-primary" disabled={busy}>{busy ? <span className="spinner" /> : 'เข้าสู่ระบบ'}</button>
       </form>
     </div>
   );
@@ -162,18 +164,18 @@ function ChangePassword({ onDone }: { onDone: () => void }) {
           }
         }}
       >
-        <h1>Set a new password</h1>
-        <p className="small muted">Your password was set by an administrator. Choose your own to continue.</p>
+        <h1>ตั้งรหัสผ่านใหม่</h1>
+        <p className="small muted">รหัสผ่านนี้ถูกตั้งโดยผู้ดูแล กรุณาตั้งรหัสผ่านของคุณเองก่อนใช้งาน</p>
         <label className="field">
-          <span>Temporary password</span>
+          <span>รหัสผ่านชั่วคราว</span>
           <input className="input" type="password" autoComplete="current-password" value={cur} onChange={(e) => setCur(e.target.value)} required />
         </label>
         <label className="field">
-          <span>New password (8+ characters)</span>
+          <span>รหัสผ่านใหม่ (อย่างน้อย 8 ตัวอักษร)</span>
           <input className="input" type="password" autoComplete="new-password" minLength={8} value={next} onChange={(e) => setNext(e.target.value)} required />
         </label>
         {error && <p className="banner banner-bad">{error}</p>}
-        <button className="btn btn-primary">Save password</button>
+        <button className="btn btn-primary">บันทึกรหัสผ่าน</button>
       </form>
     </div>
   );

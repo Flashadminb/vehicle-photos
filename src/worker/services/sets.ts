@@ -128,8 +128,8 @@ export async function updatePlate(env: Env, user: AuthUser, id: string, text: st
   const r = await loadVisibleSet(env, user, id);
   const clean = (text ?? '').normalize('NFC').replace(/\s+/g, ' ').trim();
   if (clean.length > 30) throw badRequest('Plate text is too long.');
-  if (clean && !/[0-9]/.test(clean)) throw badRequest('A plate should contain digits.');
-  if (r.status === 'open') throw conflict('round_open', 'Wait until the set is saved before correcting the plate.');
+  if (clean && !/[0-9]/.test(clean)) throw badRequest('ทะเบียนต้องมีตัวเลข');
+  if (r.status === 'open') throw conflict('round_open', 'รอให้ชุดรูปบันทึกเสร็จก่อนจึงแก้ทะเบียนได้');
   await env.DB.batch([
     env.DB.prepare(
       `UPDATE rounds SET plate_text = ?, plate_norm = ?, plate_digits = ?, plate_source = ?, plate_updated_at = ?, plate_updated_by = ?, updated_at = ? WHERE id = ?`,

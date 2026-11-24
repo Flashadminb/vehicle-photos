@@ -12,7 +12,7 @@ export class ApiError extends Error {
 }
 
 export const badRequest = (msg: string, details?: unknown) => new ApiError(400, 'bad_request', msg, details);
-export const forbidden = (msg = 'You do not have permission for this action.') => new ApiError(403, 'forbidden', msg);
+export const forbidden = (msg = 'คุณไม่มีสิทธิ์ทำรายการนี้') => new ApiError(403, 'forbidden', msg);
 export const notFound = (msg = 'Not found.') => new ApiError(404, 'not_found', msg);
 export const conflict = (code: string, msg: string, details?: unknown) => new ApiError(409, code, msg, details);
 /** Temporary failure; the client should retry later. */

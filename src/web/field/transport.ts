@@ -18,11 +18,11 @@ export const httpTransport: FieldTransport = {
       res = await fetch(url, { method: 'PUT', body: blob, headers: { 'Content-Type': 'image/jpeg' }, signal });
     } catch (e) {
       if ((e as Error).name === 'AbortError') throw e;
-      throw new ApiError(0, 'network', 'Network error while uploading to Drive.');
+      throw new ApiError(0, 'network', 'เครือข่ายขัดข้องระหว่างอัปโหลดขึ้น Drive');
     }
     if (!res.ok) {
       // 404/410: session expired → retryable (the next attempt starts a fresh session).
-      throw new ApiError(res.status >= 400 && res.status < 500 ? 503 : res.status, 'drive_upload', `Drive upload failed (${res.status}).`);
+      throw new ApiError(res.status >= 400 && res.status < 500 ? 503 : res.status, 'drive_upload', `อัปโหลดขึ้น Drive ไม่สำเร็จ (${res.status}) ระบบจะลองใหม่`);
     }
     const body = (await res.json()) as { id?: string };
     if (!body.id) throw new ApiError(502, 'drive_upload', 'Drive did not return a file ID.');

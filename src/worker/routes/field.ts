@@ -65,7 +65,7 @@ field.post('/me/password', async (c) => {
   const { currentPassword, newPassword } = await readJson<{ currentPassword: string; newPassword: string }>(c);
   const user = c.get('user');
   const row = await c.env.DB.prepare(`SELECT password_hash FROM users WHERE id = ?`).bind(user.id).first<any>();
-  if (!(await verifyPassword(String(currentPassword ?? ''), row.password_hash))) throw new ApiError(400, 'wrong_password', 'Current password is incorrect.');
+  if (!(await verifyPassword(String(currentPassword ?? ''), row.password_hash))) throw new ApiError(400, 'wrong_password', 'รหัสผ่านปัจจุบันไม่ถูกต้อง');
   const hash = await createPasswordHash(c.env, validateNewPassword(newPassword));
   await c.env.DB.prepare(`UPDATE users SET password_hash = ?, must_change_password = 0, updated_at = ? WHERE id = ?`).bind(hash, Date.now(), user.id).run();
   return c.json({ ok: true });
@@ -96,9 +96,9 @@ field.post('/unlock', async (c) => {
   if ((r?.fails ?? 0) >= 5) {
     await revokeUserSessions(c.env, user.id, now);
     await c.env.DB.prepare(`DELETE FROM login_attempts WHERE key = ?`).bind(key).run();
-    throw new ApiError(401, 'unauthenticated', 'Too many wrong PINs. Please sign in again.');
+    throw new ApiError(401, 'unauthenticated', 'ใส่ PIN ผิดหลายครั้ง กรุณาเข้าสู่ระบบใหม่');
   }
-  throw new ApiError(400, 'wrong_pin', 'Incorrect PIN.');
+  throw new ApiError(400, 'wrong_pin', 'PIN ไม่ถูกต้อง');
 });
 
 field.post('/images/begin', async (c) => {

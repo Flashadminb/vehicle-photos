@@ -70,12 +70,12 @@ export function CaptureView(p: CaptureViewProps) {
 
   return (
     <div className={`fa ${p.preview ? 'fa-preview' : ''}`}>
-      {p.demo && <div className="banner banner-demo fa-demo">DEMO MODE — Drive is emulated</div>}
+      {p.demo && <div className="banner banner-demo fa-demo">DEMO MODE — Drive {t('demo_emulated')}</div>}
       <header className="fa-header">
         <div className="fa-title">{p.appName}</div>
         <div className="fa-header-right">
           <span className={`pill ${p.online ? 'pill-ok' : 'pill-warn'}`} aria-live="polite">
-            <span aria-hidden>●</span> {p.online ? 'Online' : 'Offline'}
+            <span aria-hidden>●</span> {p.online ? t('online') : t('offline')}
           </span>
           {p.headerRight}
         </div>
@@ -83,7 +83,7 @@ export function CaptureView(p: CaptureViewProps) {
 
       {!p.online && <div className="banner banner-warn fa-offline">{t('offline_banner')}</div>}
 
-      <nav className="fa-steps" aria-label="Steps">
+      <nav className="fa-steps" aria-label={t('review_title')}>
         {steps.map((s, i) => {
           const st = slots[s.id]?.status ?? 'empty';
           return (

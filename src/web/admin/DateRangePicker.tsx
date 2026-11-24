@@ -6,18 +6,19 @@ export interface DateRange {
   end: string;
 }
 
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-const DOW = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
+const MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+const MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+const DOW = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'];
 const pad = (n: number) => String(n).padStart(2, '0');
 const iso = (y: number, m: number, d: number) => `${y}-${pad(m + 1)}-${pad(d)}`;
 
 export function formatDate(d: string) {
   const [y, m, day] = d.split('-').map(Number);
-  return `${day} ${MONTHS[m - 1].slice(0, 3)} ${y}`;
+  return `${day} ${MONTHS_SHORT[m - 1]} ${y}`;
 }
 
 export function formatRange(r: DateRange | null) {
-  if (!r) return 'All dates';
+  if (!r) return 'ทุกวันที่';
   return r.start === r.end ? formatDate(r.start) : `${formatDate(r.start)} – ${formatDate(r.end)}`;
 }
 
@@ -89,15 +90,15 @@ export function DateRangePicker({ value, onApply, today }: { value: DateRange | 
         {formatRange(value)}
       </button>
       {open && (
-        <div className="drp-pop card" role="dialog" aria-label="Choose date range">
+        <div className="drp-pop card" role="dialog" aria-label="เลือกช่วงวันที่">
           <div className="drp-head">
-            <button type="button" className="btn btn-sm btn-icon" onClick={() => shift(-12)} aria-label="Previous year">«</button>
-            <button type="button" className="btn btn-sm btn-icon" onClick={() => shift(-1)} aria-label="Previous month">‹</button>
+            <button type="button" className="btn btn-sm btn-icon" onClick={() => shift(-12)} aria-label="ปีก่อนหน้า">«</button>
+            <button type="button" className="btn btn-sm btn-icon" onClick={() => shift(-1)} aria-label="เดือนก่อนหน้า">‹</button>
             <span className="drp-hint small muted">
-              {!draftStart ? 'Click the start date' : !draftEnd ? 'Click the end date' : formatRange({ start: draftStart, end: draftEnd })}
+              {!draftStart ? 'คลิกวันเริ่มต้น' : !draftEnd ? 'คลิกวันสิ้นสุด' : formatRange({ start: draftStart, end: draftEnd })}
             </span>
-            <button type="button" className="btn btn-sm btn-icon" onClick={() => shift(1)} aria-label="Next month">›</button>
-            <button type="button" className="btn btn-sm btn-icon" onClick={() => shift(12)} aria-label="Next year">»</button>
+            <button type="button" className="btn btn-sm btn-icon" onClick={() => shift(1)} aria-label="เดือนถัดไป">›</button>
+            <button type="button" className="btn btn-sm btn-icon" onClick={() => shift(12)} aria-label="ปีถัดไป">»</button>
           </div>
           <div className="drp-months">
             {months.map(({ y, m }) => {
@@ -146,10 +147,10 @@ export function DateRangePicker({ value, onApply, today }: { value: DateRange | 
             })}
           </div>
           <div className="drp-foot">
-            <button type="button" className="btn btn-sm" onClick={() => { setDraftStart(today); setDraftEnd(today); }}>Today</button>
-            <button type="button" className="btn btn-sm" onClick={() => { onApply(null); setOpen(false); }}>All dates</button>
+            <button type="button" className="btn btn-sm" onClick={() => { setDraftStart(today); setDraftEnd(today); }}>วันนี้</button>
+            <button type="button" className="btn btn-sm" onClick={() => { onApply(null); setOpen(false); }}>ทุกวันที่</button>
             <span style={{ flex: 1 }} />
-            <button type="button" className="btn btn-sm" onClick={() => setOpen(false)}>Cancel</button>
+            <button type="button" className="btn btn-sm" onClick={() => setOpen(false)}>ยกเลิก</button>
             <button
               type="button"
               className="btn btn-sm btn-primary"
@@ -160,7 +161,7 @@ export function DateRangePicker({ value, onApply, today }: { value: DateRange | 
                 setOpen(false);
               }}
             >
-              Apply date range
+              ใช้ช่วงวันที่นี้
             </button>
           </div>
         </div>

@@ -228,7 +228,7 @@ describe('Drive folders', () => {
     const id = await publishWorkflow(testEnv, steps, 'no upload', adminUser.id, Date.now());
     await expect(
       beginImage(testEnv, user, { clientRoundId: rid(), clientImageId: rid(), workflowVersionId: id, stepId: steps[0].id, source: 'upload', acceptedAtDevice: Date.now() }, { origin: ORIGIN, baseUrl: ORIGIN, drive: recordingDrive() }),
-    ).rejects.toThrow(/not allowed/);
+    ).rejects.toThrow(/ไม่อนุญาต/);
     await publishWorkflow(testEnv, wf.steps, 'restore', adminUser.id, Date.now());
   });
 });
@@ -241,7 +241,7 @@ describe('finalization', () => {
     const round = rid();
     const opts = { origin: ORIGIN, baseUrl: ORIGIN, drive };
     const b = await beginImage(testEnv, user, { clientRoundId: round, clientImageId: rid(), workflowVersionId: wf.id, stepId: wf.steps[0].id, source: 'camera', acceptedAtDevice: Date.now() }, opts);
-    await expect(finalizeRound(testEnv, user, b.round.id, 'key')).rejects.toThrow(/missing or still uploading/);
+    await expect(finalizeRound(testEnv, user, b.round.id, 'key')).rejects.toThrow(/ยังขาดรูป/);
     const r = await testEnv.DB.prepare(`SELECT status FROM rounds WHERE id = ?`).bind(b.round.id).first<any>();
     expect(r.status).toBe('open');
   });
