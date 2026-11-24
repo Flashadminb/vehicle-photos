@@ -27,15 +27,21 @@ app.onError((err, c) => errorResponse(c, err));
 
 app.get('/api/health', (c) => c.json({ ok: true, mode: isDemo(c.env) ? 'demo' : 'google', time: Date.now() }));
 
+/** Whether the first Super Admin still has to be created (reveals nothing else). */
+app.get('/api/setup/status', async (c) => {
+  const n = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM users`).first<{ n: number }>();
+  return c.json({ needed: (n?.n ?? 0) === 0, tokenConfigured: !!c.env.SETUP_TOKEN });
+});
+
 /**
  * First-run setup: creates the first Super Admin. Requires the SETUP_TOKEN secret and
  * only works while there are no users, so it cannot be used to take over a live system.
  */
 app.post('/api/setup', async (c) => {
   const body = await readJson<{ token: string; username: string; displayName: string; password: string }>(c);
-  if (!c.env.SETUP_TOKEN || body.token !== c.env.SETUP_TOKEN) throw new ApiError(403, 'forbidden', 'Invalid setup token.');
+  if (!c.env.SETUP_TOKEN || body.token !== c.env.SETUP_TOKEN) throw new ApiError(403, 'forbidden', 'Setup token ไม่ถูกต้อง');
   const count = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM users`).first<{ n: number }>();
-  if ((count?.n ?? 0) > 0) throw new ApiError(409, 'already_setup', 'Setup has already been completed.');
+  if ((count?.n ?? 0) > 0) throw new ApiError(409, 'already_setup', 'ตั้งค่าครั้งแรกไปแล้ว');
   const now = Date.now();
   const id = uuid();
   const username = str(body.username, 'username', { min: 3, max: 40 });

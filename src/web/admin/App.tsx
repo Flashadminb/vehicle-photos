@@ -107,6 +107,64 @@ export function App() {
 }
 
 function Login({ onDone }: { onDone: () => void }) {
+  const [setup, setSetup] = useState<{ needed: boolean; tokenConfigured: boolean } | null>(null);
+  useEffect(() => {
+    api('GET', '/api/setup/status').then(setSetup, () => setSetup(null));
+  }, []);
+  if (setup?.needed) return <FirstSetup tokenConfigured={setup.tokenConfigured} onDone={() => setSetup({ ...setup, needed: false })} />;
+  return <LoginForm onDone={onDone} />;
+}
+
+/** First run on a fresh deployment: create the first Super Admin with the SETUP_TOKEN secret. */
+function FirstSetup({ tokenConfigured, onDone }: { tokenConfigured: boolean; onDone: () => void }) {
+  const [f, setF] = useState({ token: '', username: '', displayName: '', password: '' });
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="center">
+      <form
+        className="card auth-card"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setBusy(true);
+          setError('');
+          try {
+            await api('POST', '/api/setup', f);
+            onDone();
+          } catch (err) {
+            setError((err as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <h1>ตั้งค่าครั้งแรก</h1>
+        <p className="muted small">ระบบยังไม่มีผู้ใช้ สร้างผู้ดูแลสูงสุด (Super Admin) คนแรกที่นี่ ใช้ได้ครั้งเดียวเท่านั้น</p>
+        {!tokenConfigured && <p className="banner banner-warn small">ยังไม่ได้ตั้ง secret SETUP_TOKEN ใน Worker — ดู README</p>}
+        <label className="field">
+          <span>Setup token (ค่า SETUP_TOKEN ที่ตั้งไว้)</span>
+          <input className="input" type="password" value={f.token} onChange={(e) => setF({ ...f, token: e.target.value })} required />
+        </label>
+        <label className="field">
+          <span>ชื่อผู้ใช้</span>
+          <input className="input" autoComplete="username" pattern="[A-Za-z0-9._\-]{3,40}" value={f.username} onChange={(e) => setF({ ...f, username: e.target.value })} required />
+        </label>
+        <label className="field">
+          <span>ชื่อที่แสดง</span>
+          <input className="input" value={f.displayName} onChange={(e) => setF({ ...f, displayName: e.target.value })} required />
+        </label>
+        <label className="field">
+          <span>รหัสผ่าน (อย่างน้อย 8 ตัวอักษร)</span>
+          <input className="input" type="password" autoComplete="new-password" minLength={8} value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} required />
+        </label>
+        {error && <p className="banner banner-bad" role="alert">{error}</p>}
+        <button className="btn btn-primary" disabled={busy}>{busy ? <span className="spinner" /> : 'สร้างผู้ดูแลสูงสุด'}</button>
+      </form>
+    </div>
+  );
+}
+
+function LoginForm({ onDone }: { onDone: () => void }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');

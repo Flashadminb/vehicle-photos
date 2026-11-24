@@ -546,7 +546,7 @@ admin.get('/storage', requirePermission('storage.view'), async (c) => {
     `SELECT id, kind, ref_id, attempts, last_error, updated_at FROM jobs WHERE status = 'failed' OR (status = 'pending' AND attempts > 0) ORDER BY updated_at DESC LIMIT 20`,
   ).all();
   return c.json({
-    cache: { ...cache, quotaBytes: settings.cacheQuotaBytes, thresholdPct: settings.cacheThresholdPct, targetPct: settings.cacheTargetPct },
+    cache: { ...cache, enabled: !!c.env.CACHE, quotaBytes: settings.cacheQuotaBytes, thresholdPct: settings.cacheThresholdPct, targetPct: settings.cacheTargetPct },
     db: { bytes: dbBytes, quotaBytes: settings.dbQuotaBytes, thresholdPct: settings.dbThresholdPct, rounds },
     jobs,
     failedJobs,
@@ -678,7 +678,7 @@ admin.get('/demo-drive/folders/:id', requirePermission('sets.view'), async (c) =
 
 admin.get('/demo-drive/files/:id', requirePermission('sets.view'), async (c) => {
   if (!isDemo(c.env)) throw notFound();
-  const obj = await c.env.CACHE.get(`demo-drive/${c.req.param('id')}`);
+  const obj = await c.env.CACHE!.get(`demo-drive/${c.req.param('id')}`);
   if (!obj) throw notFound();
   return new Response(obj.body, { headers: { 'Content-Type': 'image/jpeg' } });
 });

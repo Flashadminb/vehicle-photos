@@ -13,6 +13,7 @@ export const MAX_CACHE_OBJECT_BYTES = 3 * 1024 * 1024;
 export const cacheKey = (imageId: string, kind: CacheKind) => `cache/${imageId}/${kind}.jpg`;
 
 export async function putCache(env: Env, imageId: string, kind: CacheKind, body: ArrayBuffer, now = Date.now()) {
+  if (!env.CACHE) return; // R2 not configured: Drive remains the only copy
   const key = cacheKey(imageId, kind);
   await env.CACHE.put(key, body, { httpMetadata: { contentType: 'image/jpeg' } });
   await env.DB.prepare(
@@ -24,6 +25,7 @@ export async function putCache(env: Env, imageId: string, kind: CacheKind, body:
 }
 
 export async function getCache(env: Env, imageId: string, kind: CacheKind) {
+  if (!env.CACHE) return null;
   return env.CACHE.get(cacheKey(imageId, kind));
 }
 
@@ -54,7 +56,7 @@ export async function evictCache(env: Env, settings: AppSettings, maxBatches = 5
       bytes -= r.bytes;
     }
     if (!batch.length) break;
-    await env.CACHE.delete(batch);
+    await env.CACHE?.delete(batch);
     await env.DB.prepare(`DELETE FROM cache_objects WHERE key IN (${batch.map(() => '?').join(',')})`).bind(...batch).run();
     evicted += batch.length;
   }

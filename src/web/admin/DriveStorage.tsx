@@ -172,6 +172,7 @@ export function DriveStorage() {
           Cloudflare R2 เก็บแค่แคชชั่วคราวของรูปล่าสุดและภาพย่อ รูปจริงอยู่ใน Google Drive เมื่อแคชเกินเกณฑ์ ระบบจะลบสำเนาที่เก่าที่สุดออกจากแคช (ไม่แตะไฟล์ใน Drive)
           จนลดลงถึงระดับเป้าหมาย
         </p>
+        {storage.cache.enabled === false && <p className="banner banner-warn small">ยังไม่ได้เปิดใช้ R2 — ระบบทำงานได้ปกติ แต่รูปของวันล่าสุดจะโหลดจาก Google Drive โดยตรง (ช้ากว่า) ดูวิธีเปิด R2 ใน README</p>}
         <Meter label="แคชรูป R2" used={storage.cache.bytes} quota={storage.cache.quotaBytes} threshold={storage.cache.thresholdPct} />
         <p className="small muted">แคชอยู่ {storage.cache.objects.toLocaleString()} ไฟล์ · หลังล้างจะเหลือ {storage.cache.targetPct}%</p>
         <Meter label="ฐานข้อมูล D1 (metadata)" used={storage.db.bytes} quota={storage.db.quotaBytes} threshold={storage.db.thresholdPct} />

@@ -103,7 +103,7 @@ export class DemoDrive implements DriveClient {
     if (!s) return null;
     if (s.file_id) return { id: s.file_id as string, name: s.name as string, size: body.byteLength };
     const fileId = `demo-${crypto.randomUUID()}`;
-    await env.CACHE.put(`demo-drive/${fileId}`, body, { httpMetadata: { contentType: s.mime_type } });
+    await env.CACHE!.put(`demo-drive/${fileId}`, body, { httpMetadata: { contentType: s.mime_type } });
     await env.DB.batch([
       env.DB.prepare(
         `INSERT INTO demo_drive_files (id, name, parent_id, mime_type, size, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
@@ -115,7 +115,7 @@ export class DemoDrive implements DriveClient {
 
   async download(id: string) {
     this.log('download', id);
-    const obj = await this.env.CACHE.get(`demo-drive/${id}`);
+    const obj = await this.env.CACHE!.get(`demo-drive/${id}`);
     if (!obj) throw new Error('Drive download 404');
     return new Response(obj.body, { headers: { 'Content-Type': obj.httpMetadata?.contentType ?? 'image/jpeg' } });
   }

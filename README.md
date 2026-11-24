@@ -106,67 +106,56 @@ npm test
 
 ## 3. Deploy ขึ้น Cloudflare (บัญชีปลายทาง)
 
-> บัญชี Cloudflare ที่ใช้ deploy **ไม่จำเป็นต้องเป็นบัญชีที่ล็อกอินอยู่ในเครื่อง** ในโค้ดไม่มี account ID ฝังอยู่เลย
+> ใช้บัญชี Cloudflare ปลายทางผ่าน API token **ไม่เกี่ยวกับบัญชีที่ล็อกอินอยู่ในเครื่อง** และในโค้ดไม่มี account ID ฝังอยู่เลย
 
-### วิธีที่ 1: GitHub Actions (แนะนำ)
+### ขั้นที่ 1 — สร้าง API Token ในบัญชี Cloudflare ปลายทาง
+1. ล็อกอิน https://dash.cloudflare.com ด้วย**บัญชีปลายทาง**
+2. ถ้าบัญชีนี้ยังไม่เคยใช้ Workers ให้เข้าเมนู **Workers & Pages** หนึ่งครั้ง ระบบจะสร้างโดเมน `*.workers.dev` ให้
+3. (ไม่บังคับแต่แนะนำ) เข้าเมนู **R2** แล้วกดเปิดใช้งาน แผนฟรีได้ 10 GB แต่ Cloudflare อาจขอให้ผูกบัตรไว้ก่อน ถ้าไม่เปิด ระบบยังทำงานได้ แค่รูปของวันล่าสุดจะโหลดจาก Drive โดยตรงซึ่งช้ากว่า
+4. ไปที่ **My Profile → API Tokens → Create Token** แล้วเลือก template **"Edit Cloudflare Workers"**
+5. กด **+ Add more** เพื่อเพิ่มสิทธิ์ **Account → D1 → Edit** และ **Account → Workers R2 Storage → Edit**
+6. กดสร้าง แล้วคัดลอก token ไว้ ระบบจะแสดงค่า token ให้เห็นแค่ครั้งเดียว
+7. คัดลอก **Account ID** ด้วย (อยู่ในหน้า Workers & Pages ด้านขวา)
 
-**ขั้นที่ 1 — เตรียม token ในบัญชี Cloudflare ปลายทาง**
-1. ไปที่ **My Profile → API Tokens → Create Token**
-2. เลือก template "Edit Cloudflare Workers"
-3. เพิ่มสิทธิ์ **D1: Edit** และ **Workers R2 Storage: Edit**
-4. จด **Account ID** ไว้ (อยู่หน้า Workers & Pages ด้านขวา)
+### ขั้นที่ 2 — ใส่ secrets ใน GitHub
+ไปที่ https://github.com/Flashadminb/vehicle-photos/settings/secrets/actions แล้วกด **New repository secret** ทีละตัว:
 
-**ขั้นที่ 2 — สร้าง D1 และ R2 ครั้งเดียว** (รันจากเครื่องไหนก็ได้ โดยใช้ token ของบัญชีปลายทาง)
-```bash
-CLOUDFLARE_API_TOKEN=xxx CLOUDFLARE_ACCOUNT_ID=yyy npx wrangler d1 create vehicle-photos
-```
-```bash
-CLOUDFLARE_API_TOKEN=xxx CLOUDFLARE_ACCOUNT_ID=yyy npx wrangler r2 bucket create vehicle-photos-cache
-```
+| ชื่อ | ค่า | จำเป็น |
+|---|---|---|
+| `CLOUDFLARE_API_TOKEN` | token จากขั้นที่ 1 | ✅ |
+| `CLOUDFLARE_ACCOUNT_ID` | Account ID จากขั้นที่ 1 | ✅ |
+| `SETUP_TOKEN` | ตั้งรหัสลับยาว ๆ เองได้เลย (ใช้ครั้งเดียวตอนสร้างแอดมินคนแรก) | ✅ |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | จากข้อ 2 (ใส่ทีหลังได้ แล้วรัน workflow ใหม่) | ภายหลัง |
+| `GOOGLE_VISION_API_KEY` / `AIFORTHAI_API_KEY` | ถ้าจะใช้ OCR | ไม่บังคับ |
 
-**ขั้นที่ 3 — ใส่ secrets ของ Worker**
+ไม่ต้องสร้าง `TOKEN_ENC_KEY` เอง workflow สร้างให้อัตโนมัติครั้งแรกครั้งเดียว และไม่แสดงค่าออกมา
 
-สร้าง `TOKEN_ENC_KEY` ด้วยคำสั่ง `openssl rand -base64 32` และตั้ง `SETUP_TOKEN` เป็นรหัสสุ่มยาว ๆ แล้วรันคำสั่งนี้ทีละตัว:
-```bash
-CLOUDFLARE_API_TOKEN=xxx CLOUDFLARE_ACCOUNT_ID=yyy npx wrangler secret put GOOGLE_CLIENT_ID
-```
-ทำแบบเดียวกันกับ `GOOGLE_CLIENT_SECRET`, `TOKEN_ENC_KEY` และ `SETUP_TOKEN`
+### ขั้นที่ 3 — กด Deploy
+ไปที่ https://github.com/Flashadminb/vehicle-photos/actions/workflows/deploy.yml แล้วกด **Run workflow**
 
-**ขั้นที่ 4 — ใส่ secrets ใน GitHub repo**
+workflow จะทำทั้งหมดนี้ให้: รันเทสต์ → สร้างฐานข้อมูล D1 และ R2 (ถ้ายังไม่มี) → build → migrate ฐานข้อมูล → deploy → ตั้ง secrets
 
-ไปที่ **Settings → Secrets and variables → Actions** แล้วเพิ่ม:
-- `CLOUDFLARE_API_TOKEN`
-- `CLOUDFLARE_ACCOUNT_ID`
-- `D1_DATABASE_ID` (ได้จากผลลัพธ์ของขั้นที่ 2)
+พอเสร็จ หน้าสรุปของ workflow จะแสดง URL ของแอป, URL แดชบอร์ด และ **OAuth redirect URI** ที่ต้องนำไปใส่ใน Google Cloud (ข้อ 2 ขั้นที่ 4)
 
-**ขั้นที่ 5 — Deploy**
+### ขั้นที่ 4 — หลัง deploy
+1. เปิด `https://<ชื่อ>.workers.dev/admin/` จะเจอหน้า **ตั้งค่าครั้งแรก** ให้ใส่ค่า `SETUP_TOKEN` แล้วสร้างผู้ดูแลสูงสุด
+2. ใส่ `GOOGLE_CLIENT_ID` และ `GOOGLE_CLIENT_SECRET` ใน GitHub secrets ถ้ายังไม่ได้ใส่ แล้วกด Run workflow อีกครั้ง
+3. ในแดชบอร์ด เข้าหน้า **Google Drive และการเก็บรักษา** → กด **เชื่อมต่อ Google Drive** แล้วล็อกอินด้วยบัญชีเจ้าของโฟลเดอร์รูป
+4. เข้าหน้า **สมาชิกและสิทธิ์** เพื่อสร้างบัญชีให้พนักงานภาคสนาม
+5. ให้พนักงานเปิด URL หลักบนมือถือ แล้วกด "เพิ่มลงหน้าจอหลัก" (Add to Home Screen)
 
-ไปที่แท็บ **Actions → Deploy to Cloudflare → Run workflow** ระบบจะรันเทสต์ → build → migrate ฐานข้อมูล → deploy
-
-### วิธีที่ 2: deploy จากเครื่องตัวเอง
-```bash
-npx wrangler logout
-```
+### ทางเลือก: deploy จากเครื่องตัวเอง
 ```bash
 npx wrangler login
 ```
-ตอนล็อกอินให้เลือก**บัญชีปลายทาง** แล้วตรวจให้แน่ใจด้วยคำสั่งนี้:
+ตอนล็อกอินให้เลือกบัญชีปลายทาง แล้วตรวจให้แน่ใจด้วยคำสั่งนี้:
 ```bash
 npx wrangler whoami
 ```
-จากนั้นรันสคริปต์ติดตั้ง (จะถามยืนยันบัญชีก่อนสร้างอะไร):
+จากนั้นรันสคริปต์ติดตั้ง:
 ```bash
 ./scripts/setup-cloudflare.sh
 ```
-
-### หลัง deploy เสร็จ
-1. สร้าง Super Admin คนแรก (คำสั่งนี้ใช้ได้เฉพาะตอนที่ระบบยังไม่มีผู้ใช้):
-   ```bash
-   ./scripts/create-super-admin.sh https://vehicle-photos.<subdomain>.workers.dev
-   ```
-2. เข้า `/admin/` → **Google Drive & retention** → **Connect Google Drive** แล้วล็อกอินด้วยบัญชีเจ้าของโฟลเดอร์
-3. เข้า **Members & permissions** เพื่อสร้างบัญชีให้พนักงานภาคสนาม
-4. ให้พนักงานเปิด URL หลักบนมือถือ แล้วกด "เพิ่มลงหน้าจอหลัก" (Add to Home Screen)
 
 ### ตัวแปรและ secrets ทั้งหมด
 
@@ -176,7 +165,7 @@ npx wrangler whoami
 | `DRIVE_ROOT_FOLDER_ID` | var | ID ของโฟลเดอร์หลักเริ่มต้น |
 | `PASSWORD_ITERATIONS` | var | จำนวนรอบ PBKDF2 (สูงสุด 100000) ถ้าล็อกอินแล้วเจอ error CPU limit บนแผนฟรี ให้ลดเป็น 50000 |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | secret | OAuth client |
-| `TOKEN_ENC_KEY` | secret | key 32 ไบต์ (base64) ใช้เข้ารหัส refresh token |
+| `TOKEN_ENC_KEY` | secret | key 32 ไบต์ (base64) ใช้เข้ารหัส refresh token — workflow สร้างให้อัตโนมัติ (ถ้าเปลี่ยนค่าทีหลัง ต้องเชื่อม Google Drive ใหม่) |
 | `SETUP_TOKEN` | secret | ใช้สร้าง Super Admin คนแรก |
 | `PUBLIC_BASE_URL` | secret/var | (ไม่บังคับ) URL ที่ใช้ทำ OAuth redirect |
 | `GOOGLE_VISION_API_KEY` / `AIFORTHAI_API_KEY` | secret | (ไม่บังคับ) สำหรับ OCR |

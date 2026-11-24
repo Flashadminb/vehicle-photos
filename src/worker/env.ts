@@ -1,6 +1,10 @@
 export interface Env {
   DB: D1Database;
-  CACHE: R2Bucket;
+  /**
+   * Optional R2 image cache. Without it (e.g. R2 not enabled on the account) the app
+   * still works: recent images are streamed from Drive instead of the cache.
+   */
+  CACHE?: R2Bucket;
   ASSETS?: Fetcher;
 
   /** 'google' (production) or 'demo' (explicitly labelled demo mode, emulated Drive). */
