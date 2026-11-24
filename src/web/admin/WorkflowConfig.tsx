@@ -1,0 +1,250 @@
+import { useEffect, useState } from 'react';
+import { api } from '../shared/api';
+import type { AppSettings, Language, WorkflowStep, WorkflowVersion } from '../../shared/types';
+import { FieldPreview } from './Preview';
+import { formatBangkok } from '../../shared/time';
+
+export function WorkflowConfig() {
+  const [current, setCurrent] = useState<WorkflowVersion | null>(null);
+  const [versions, setVersions] = useState<any[]>([]);
+  const [steps, setSteps] = useState<WorkflowStep[]>([]);
+  const [languages, setLanguages] = useState<Language[]>([]);
+  const [overrides, setOverrides] = useState<Record<string, Record<string, string>>>({});
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [note, setNote] = useState('');
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [newLang, setNewLang] = useState({ code: '', name: '' });
+
+  async function load() {
+    const [w, i, s] = await Promise.all([
+      api<{ current: WorkflowVersion; versions: any[] }>('GET', '/api/admin/workflow'),
+      api<{ languages: Language[]; overrides: Record<string, Record<string, string>> }>('GET', '/api/admin/i18n'),
+      api<AppSettings>('GET', '/api/admin/settings'),
+    ]);
+    setCurrent(w.current);
+    setVersions(w.versions);
+    setSteps(structuredClone(w.current.steps));
+    setLanguages(i.languages);
+    setOverrides(i.overrides);
+    setSettings(s);
+  }
+  useEffect(() => void load().catch((e) => setMsg({ ok: false, text: e.message })), []);
+
+  if (!current || !settings) return <div className="page"><span className="spinner" /></div>;
+
+  const dirty = JSON.stringify(steps) !== JSON.stringify(current.steps);
+  const update = (i: number, patch: Partial<WorkflowStep>) => setSteps((s) => s.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+  const move = (i: number, d: number) =>
+    setSteps((s) => {
+      const n = [...s];
+      const j = i + d;
+      if (j < 0 || j >= n.length) return s;
+      [n[i], n[j]] = [n[j], n[i]];
+      return n;
+    });
+
+  async function publish() {
+    setMsg(null);
+    try {
+      const r = await api<{ id: number }>('POST', '/api/admin/workflow', { steps, note });
+      setMsg({ ok: true, text: `Published workflow v${r.id}. Rounds already in progress keep their original version; new rounds use v${r.id}.` });
+      setNote('');
+      await load();
+    } catch (e) {
+      setMsg({ ok: false, text: (e as Error).message });
+    }
+  }
+
+  async function saveLanguage(l: { code: string; name: string; enabled?: boolean; sort?: number }) {
+    setMsg(null);
+    try {
+      await api('PUT', `/api/admin/languages/${encodeURIComponent(l.code)}`, l);
+      await load();
+    } catch (e) {
+      setMsg({ ok: false, text: (e as Error).message });
+    }
+  }
+
+  async function setDefaults(patch: Partial<AppSettings>) {
+    setMsg(null);
+    try {
+      setSettings(await api('PUT', '/api/admin/settings', patch));
+    } catch (e) {
+      setMsg({ ok: false, text: (e as Error).message });
+    }
+  }
+
+  return (
+    <div className="page">
+      <div className="page-head">
+        <h1>Capture workflow & languages</h1>
+        <span className="muted small">Current version v{current.id}. Publishing creates a new version for new rounds only.</span>
+      </div>
+      {msg && <p className={`banner ${msg.ok ? 'banner-ok' : 'banner-bad'}`}>{msg.text}</p>}
+      <div className="split">
+        <div className="split-main">
+          <section className="card section">
+            <h2>Steps</h2>
+            <ol className="steps-editor">
+              {steps.map((s, i) => (
+                <li key={s.id} className="step-card">
+                  <div className="step-card-head">
+                    <span className="step-num">{String(i + 1).padStart(2, '0')}</span>
+                    <span className="mono small muted">{s.id}</span>
+                    <span style={{ flex: 1 }} />
+                    <button className="btn btn-sm btn-icon" onClick={() => move(i, -1)} disabled={i === 0} aria-label="Move up">↑</button>
+                    <button className="btn btn-sm btn-icon" onClick={() => move(i, 1)} disabled={i === steps.length - 1} aria-label="Move down">↓</button>
+                    <button className="btn btn-sm btn-danger" onClick={() => setSteps((x) => x.filter((_, j) => j !== i))} disabled={steps.length <= 1}>
+                      Remove
+                    </button>
+                  </div>
+                  <div className="form-grid">
+                    {languages.map((l) => (
+                      <label key={l.code} className="field">
+                        <span>Label · {l.name}</span>
+                        <input className="input" value={s.labels[l.code] ?? ''} onChange={(e) => update(i, { labels: { ...s.labels, [l.code]: e.target.value } })} />
+                      </label>
+                    ))}
+                  </div>
+                  <div className="step-flags">
+                    <label className="checkbox">
+                      <input type="checkbox" checked={s.required} onChange={(e) => update(i, { required: e.target.checked })} /> Required
+                    </label>
+                    <label className="checkbox">
+                      <input type="checkbox" checked={s.allowUpload} onChange={(e) => update(i, { allowUpload: e.target.checked })} /> Allow file upload
+                    </label>
+                    <label className="checkbox">
+                      <input type="checkbox" checked={s.ocr} onChange={(e) => update(i, { ocr: e.target.checked })} /> Read license plate (OCR)
+                    </label>
+                  </div>
+                </li>
+              ))}
+            </ol>
+            <button
+              className="btn"
+              onClick={() =>
+                setSteps((s) => [...s, { id: `step_${Math.random().toString(36).slice(2, 8)}`, required: false, allowUpload: true, ocr: false, labels: { th: 'ขั้นตอนใหม่', en: 'New step' } }])
+              }
+            >
+              + Add step
+            </button>
+            <div className="section-foot">
+              <input className="input" placeholder="Change note (optional)" value={note} onChange={(e) => setNote(e.target.value)} aria-label="Change note" />
+              <button className="btn btn-primary" disabled={!dirty} onClick={() => void publish()}>
+                Publish new version
+              </button>
+              <button className="btn" disabled={!dirty} onClick={() => setSteps(structuredClone(current.steps))}>
+                Discard
+              </button>
+            </div>
+          </section>
+
+          <section className="card section">
+            <h2>Languages</h2>
+            <div className="form-grid">
+              <label className="field">
+                <span>Default language</span>
+                <select className="input" value={settings.defaultLanguage} onChange={(e) => void setDefaults({ defaultLanguage: e.target.value })}>
+                  {languages.map((l) => (
+                    <option key={l.code} value={l.code}>{l.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Fallback when a text is missing</span>
+                <select className="input" value={settings.fallbackLanguage} onChange={(e) => void setDefaults({ fallbackLanguage: e.target.value })}>
+                  {languages.map((l) => (
+                    <option key={l.code} value={l.code}>{l.name}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <table className="table table-compact">
+              <thead>
+                <tr>
+                  <th>Code</th>
+                  <th>Name</th>
+                  <th>Enabled for operators</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {languages.map((l) => (
+                  <tr key={l.code}>
+                    <td className="mono">{l.code}</td>
+                    <td>
+                      <input className="input input-sm" defaultValue={l.name} onBlur={(e) => e.target.value !== l.name && void saveLanguage({ ...l, name: e.target.value })} aria-label={`Name of ${l.code}`} />
+                    </td>
+                    <td>
+                      <input type="checkbox" checked={l.enabled} onChange={(e) => void saveLanguage({ ...l, enabled: e.target.checked })} aria-label={`Enable ${l.code}`} />
+                    </td>
+                    <td>
+                      <button
+                        className="btn btn-sm btn-danger"
+                        disabled={l.code === settings.defaultLanguage || l.code === settings.fallbackLanguage}
+                        onClick={async () => {
+                          if (!confirm(`Remove ${l.name} and its translations?`)) return;
+                          try {
+                            await api('DELETE', `/api/admin/languages/${l.code}`);
+                            await load();
+                          } catch (e) {
+                            setMsg({ ok: false, text: (e as Error).message });
+                          }
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <form
+              className="inline-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void saveLanguage({ code: newLang.code.trim(), name: newLang.name.trim(), enabled: true, sort: languages.length });
+                setNewLang({ code: '', name: '' });
+              }}
+            >
+              <input className="input input-sm" placeholder="Code (e.g. my, lo, zh)" value={newLang.code} onChange={(e) => setNewLang({ ...newLang, code: e.target.value })} required aria-label="New language code" />
+              <input className="input input-sm" placeholder="Name (e.g. မြန်မာ)" value={newLang.name} onChange={(e) => setNewLang({ ...newLang, name: e.target.value })} required aria-label="New language name" />
+              <button className="btn btn-sm">+ Add language</button>
+            </form>
+            <p className="small muted">After adding a language, translate the interface under “Field app configuration” and step labels above.</p>
+          </section>
+
+          <section className="card section">
+            <h2>Version history</h2>
+            <table className="table table-compact">
+              <thead>
+                <tr>
+                  <th>Version</th>
+                  <th>Published</th>
+                  <th>By</th>
+                  <th>Note</th>
+                  <th>Rounds</th>
+                </tr>
+              </thead>
+              <tbody>
+                {versions.map((v) => (
+                  <tr key={v.id}>
+                    <td>v{v.id}</td>
+                    <td>{v.created_at ? formatBangkok(v.created_at) : 'initial'}</td>
+                    <td>{v.created_by_name ?? '—'}</td>
+                    <td>{v.note ?? ''}</td>
+                    <td>{v.round_count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        </div>
+        <aside className="split-side">
+          <FieldPreview steps={steps} overrides={overrides} languages={languages} fallbackLanguage={settings.fallbackLanguage} initialLang={settings.defaultLanguage} />
+          <p className="small muted">Live preview of the unpublished draft.</p>
+        </aside>
+      </div>
+    </div>
+  );
+}

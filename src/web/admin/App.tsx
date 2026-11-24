@@ -1,0 +1,180 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { api, ApiError } from '../shared/api';
+import { MeContext, type Me } from './context';
+import { History } from './History';
+import { FieldConfig } from './FieldConfig';
+import { WorkflowConfig } from './WorkflowConfig';
+import { Members } from './Members';
+import { DriveStorage } from './DriveStorage';
+import { AuditLog } from './AuditLog';
+
+const NAV = [
+  { path: 'history', label: 'Photo set history', perm: 'sets.view', icon: 'M4 6h16M4 12h16M4 18h10' },
+  { path: 'field', label: 'Field app configuration', perm: 'config.edit', icon: 'M8 3h8a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM11 18h2' },
+  { path: 'workflow', label: 'Capture workflow & languages', perm: 'config.edit', icon: 'M5 6h4v4H5zM15 6h4v4h-4zM10 16h4v4h-4zM7 10v3h10v-3M12 13v3' },
+  { path: 'members', label: 'Members & permissions', perm: 'users.manage', icon: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21a7 7 0 0 1 14 0M17 11a3 3 0 1 0 0-6M22 21a6 6 0 0 0-4-5.6' },
+  { path: 'drive', label: 'Google Drive & retention', perm: 'storage.view', icon: 'M8 3h8l6 10-4 7H6l-4-7zM2 13h20M8 3l8 17M16 3 8 20' },
+  { path: 'audit', label: 'Audit log', perm: 'audit.view', icon: 'M6 3h9l4 4v14H6zM9 12h7M9 16h7M9 8h3' },
+];
+
+function useHashRoute() {
+  const get = () => (location.hash.replace(/^#\/?/, '').split('?')[0] || 'history').split('/')[0];
+  const [route, setRoute] = useState(get);
+  useEffect(() => {
+    const h = () => setRoute(get());
+    window.addEventListener('hashchange', h);
+    return () => window.removeEventListener('hashchange', h);
+  }, []);
+  return route;
+}
+
+export function App() {
+  const [me, setMe] = useState<Omit<Me, 'can'> | null>(null);
+  const [state, setState] = useState<'loading' | 'login' | 'ready'>('loading');
+  const route = useHashRoute();
+
+  const load = useCallback(async () => {
+    try {
+      setMe(await api('GET', '/api/admin/me'));
+      setState('ready');
+    } catch (e) {
+      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) setState('login');
+      else setState('login');
+    }
+  }, []);
+  useEffect(() => void load(), [load]);
+
+  const value = useMemo<Me | null>(() => (me ? { ...me, can: (p: string) => me.permissions.includes(p) } : null), [me]);
+
+  if (state === 'loading') return <div className="center"><span className="spinner" aria-label="Loading" /></div>;
+  if (state === 'login' || !value) return <Login onDone={load} />;
+  if (value.user.mustChangePassword) return <ChangePassword onDone={load} />;
+
+  const allowed = NAV.filter((n) => value.can(n.perm));
+  const active = allowed.find((n) => n.path === route) ?? allowed[0];
+
+  return (
+    <MeContext.Provider value={value}>
+      <div className="shell">
+        <aside className="sidebar">
+          <div className="brand">
+            <span className="brand-mark" aria-hidden>◉</span>
+            <div>
+              <div className="brand-name">Vehicle Photos</div>
+              <div className="small muted">Admin dashboard</div>
+            </div>
+          </div>
+          <nav aria-label="Main">
+            {allowed.map((n) => (
+              <a key={n.path} href={`#/${n.path}`} className={`nav-link ${active?.path === n.path ? 'is-active' : ''}`} aria-current={active?.path === n.path ? 'page' : undefined}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d={n.icon} />
+                </svg>
+                {n.label}
+              </a>
+            ))}
+          </nav>
+          <div className="sidebar-foot">
+            <div className="small">
+              <strong>{value.user.displayName}</strong>
+              <div className="muted">{value.user.role.replace('_', ' ')}</div>
+            </div>
+            <button
+              className="btn btn-sm"
+              onClick={async () => {
+                await api('POST', '/api/admin/logout').catch(() => undefined);
+                setState('login');
+              }}
+            >
+              Sign out
+            </button>
+          </div>
+        </aside>
+        <main className="content">
+          {value.demo && <div className="banner banner-demo">DEMO MODE — Google Drive is emulated locally and demo accounts exist. Do not use for real data.</div>}
+          {active?.path === 'history' && <History />}
+          {active?.path === 'field' && <FieldConfig />}
+          {active?.path === 'workflow' && <WorkflowConfig />}
+          {active?.path === 'members' && <Members />}
+          {active?.path === 'drive' && <DriveStorage />}
+          {active?.path === 'audit' && <AuditLog />}
+        </main>
+      </div>
+    </MeContext.Provider>
+  );
+}
+
+function Login({ onDone }: { onDone: () => void }) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="center">
+      <form
+        className="card auth-card"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setBusy(true);
+          setError('');
+          try {
+            await api('POST', '/api/admin/login', { username, password });
+            onDone();
+          } catch (err) {
+            setError((err as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <h1>Admin dashboard</h1>
+        <p className="muted small">Vehicle Photos — sign in with an administrator or reviewer account.</p>
+        <label className="field">
+          <span>Username</span>
+          <input className="input" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required />
+        </label>
+        <label className="field">
+          <span>Password</span>
+          <input className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+        </label>
+        {error && <p className="banner banner-bad" role="alert">{error}</p>}
+        <button className="btn btn-primary" disabled={busy}>{busy ? <span className="spinner" /> : 'Sign in'}</button>
+      </form>
+    </div>
+  );
+}
+
+function ChangePassword({ onDone }: { onDone: () => void }) {
+  const [cur, setCur] = useState('');
+  const [next, setNext] = useState('');
+  const [error, setError] = useState('');
+  return (
+    <div className="center">
+      <form
+        className="card auth-card"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          try {
+            await api('POST', '/api/admin/me/password', { currentPassword: cur, newPassword: next });
+            onDone();
+          } catch (err) {
+            setError((err as Error).message);
+          }
+        }}
+      >
+        <h1>Set a new password</h1>
+        <p className="small muted">Your password was set by an administrator. Choose your own to continue.</p>
+        <label className="field">
+          <span>Temporary password</span>
+          <input className="input" type="password" autoComplete="current-password" value={cur} onChange={(e) => setCur(e.target.value)} required />
+        </label>
+        <label className="field">
+          <span>New password (8+ characters)</span>
+          <input className="input" type="password" autoComplete="new-password" minLength={8} value={next} onChange={(e) => setNext(e.target.value)} required />
+        </label>
+        {error && <p className="banner banner-bad">{error}</p>}
+        <button className="btn btn-primary">Save password</button>
+      </form>
+    </div>
+  );
+}
