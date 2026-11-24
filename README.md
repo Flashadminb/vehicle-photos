@@ -15,7 +15,7 @@
 | แอปถ่ายรูป: คิวอัปโหลดที่ไม่หายเมื่อปิด/รีโหลด, ถ่ายซ้ำ, ปุ่ม DONE, ลายน้ำเวลา | ✅ ใช้งานได้ |
 | แดชบอร์ด: ประวัติ, ตัวกรองวันเวลา, แบ่งหน้าฝั่งเซิร์ฟเวอร์, ดูชุดรูป, แก้ทะเบียน, ซ่อน/ลบ, Excel พร้อมรูป | ✅ ใช้งานได้ |
 | ล็อกอิน, role, PIN, รีเซ็ตรหัสผ่าน, audit log | ✅ ใช้งานได้ |
-| Google Drive (OAuth, โฟลเดอร์ตามวันที่, เปลี่ยนชื่อโฟลเดอร์, แชร์แบบ private) | ✅ เขียนครบ — **ยังไม่ได้ทดสอบกับบัญชี Google จริง** ต้องตั้งค่า OAuth ก่อน (ดูขั้นตอนด้านล่าง) |
+| Google Drive (OAuth, โฟลเดอร์ตามวันที่, เปลี่ยนชื่อโฟลเดอร์, แชร์แบบ private) | ✅ เขียนครบ — **ยังไม่ได้ทดสอบกับบัญชี Google จริง** ต้องตั้งค่า OAuth ก่อน (ดูข้อ 2 ขั้น A) |
 | OCR ป้ายทะเบียน (Google Vision / AI for Thai) | ⚠️ เขียนไว้แล้ว แต่ **ยังไม่ได้ทดสอบกับรูปป้ายจริง** ค่าเริ่มต้นปิดไว้ |
 | ย้าย metadata เก่าไปเก็บใน Drive | 📄 มีแค่เอกสารอธิบายวิธี ยังไม่ได้ทำเป็นระบบอัตโนมัติ |
 | อัปโหลดต่อตอนปิดแอปหรือล็อกจอ | ❌ PWA ทำไม่ได้ ต้องทำเป็นแอป Capacitor (ดู ARCHITECTURE §2) |
@@ -78,8 +78,17 @@ npm test
 
 ---
 
-## 2. ตั้งค่า Google Drive (ทำครั้งเดียว ฟรี)
+## 2. ติดตั้งใช้งานจริง — ทำตามลำดับ (Cloudflare ทำเป็นขั้นสุดท้าย)
 
+| ขั้น | ทำที่ไหน | ได้อะไร |
+|---|---|---|
+| A | Google Cloud Console | Client ID และ Client Secret |
+| B | GitHub (repo settings) | ใส่ค่า Google และ `SETUP_TOKEN` |
+| C | Cloudflare (ขั้นสุดท้าย) | API token และ Account ID → ใส่ GitHub → กด Deploy |
+| D | Google Cloud Console | ใส่ redirect URI ที่ได้หลัง deploy |
+| E | แดชบอร์ดของแอป | สร้างแอดมิน → เชื่อม Drive → เพิ่มพนักงาน |
+
+### ขั้น A — Google Cloud (ทำครั้งเดียว ฟรี)
 1. เข้า https://console.cloud.google.com แล้วสร้างโปรเจกต์ใหม่ โดยล็อกอินด้วย**บัญชีที่เป็นเจ้าของโฟลเดอร์เก็บรูป**
 2. เข้าเมนู **APIs & Services → Library** แล้วเปิดใช้ **Google Drive API** (ถ้าจะใช้ OCR ให้เปิด **Cloud Vision API** ด้วย)
 3. เข้าเมนู **OAuth consent screen**:
@@ -89,26 +98,27 @@ npm test
    - กด **Publish app** เพื่อเปลี่ยนสถานะเป็น "In production"
    - ⚠️ ถ้าค้างไว้ที่สถานะ "Testing" Google จะยกเลิก token ทุก 7 วัน และการอัปโหลดจะหยุด
    - ไม่ต้องรอ Google verify แอป ตอนเชื่อมต่อจะมีหน้าเตือนให้กด "Continue" แค่ครั้งเดียว
-4. เข้าเมนู **Credentials → Create credentials → OAuth client ID**:
-   - เลือกประเภท Web application
-   - ใส่ Authorized redirect URI เป็น `https://<โดเมนของคุณ>/api/admin/drive/oauth/callback` (ดู URI ที่ถูกต้องได้ในแดชบอร์ด หน้า "Google Drive & retention")
-   - ถ้าจะลองในเครื่องด้วย ให้เพิ่ม `http://localhost:8787/api/admin/drive/oauth/callback`
-5. เก็บ Client ID และ Client Secret ไว้สำหรับขั้นตอนถัดไป
-6. โฟลเดอร์เก็บรูปตั้งไว้แล้วใน `wrangler.jsonc` คือ `DRIVE_ROOT_FOLDER_ID=1qjKh1HpA14b63xgmaH5tBhVHF74yGjjp` (เปลี่ยนได้ในแดชบอร์ด)
+4. เข้าเมนู **Credentials → Create credentials → OAuth client ID** แล้วเลือกประเภท **Web application**
+   - ช่อง **Authorized redirect URIs** ให้**เว้นว่างไว้ก่อน** เพราะยังไม่มี URL ของแอป จะกลับมาใส่ในขั้น D
+   - ถ้าจะลองในเครื่องด้วย ใส่ `http://localhost:8787/api/admin/drive/oauth/callback` ได้เลย
+5. กดสร้าง แล้วเก็บ **Client ID** และ **Client Secret** ไว้
+6. โฟลเดอร์เก็บรูปตั้งไว้แล้วคือ `1qjKh1HpA14b63xgmaH5tBhVHF74yGjjp` (เปลี่ยนได้ในแดชบอร์ด)
 
-**เรื่องความเป็นส่วนตัวของรูป:**
-- ระบบไม่สร้างลิงก์แบบ "ทุกคนที่มีลิงก์" เลย
-- ปุ่ม "Open set in Drive" จะเปิดได้เฉพาะบัญชี Google ที่ได้รับแชร์โฟลเดอร์หลักไว้
-- Super Admin แชร์โฟลเดอร์ให้แอดมินคนอื่นได้จากแดชบอร์ด (ปุ่ม "Give view access")
-- การลบผู้ใช้ออกจากแดชบอร์ด**ไม่ได้**ถอนสิทธิ์ Drive ให้อัตโนมัติ ต้องถอนแชร์ใน Drive เองด้วย
+### ขั้น B — ใส่ secrets ใน GitHub
+ไปที่ https://github.com/Flashadminb/vehicle-photos/settings/secrets/actions แล้วกด **New repository secret** ทีละตัว:
 
----
+| ชื่อ | ค่า | จำเป็น |
+|---|---|---|
+| `GOOGLE_CLIENT_ID` | จากขั้น A | ✅ |
+| `GOOGLE_CLIENT_SECRET` | จากขั้น A | ✅ |
+| `SETUP_TOKEN` | ตั้งรหัสลับยาว ๆ เองได้เลย (ใช้ครั้งเดียวตอนสร้างแอดมินคนแรก) | ✅ |
+| `GOOGLE_VISION_API_KEY` / `AIFORTHAI_API_KEY` | ถ้าจะใช้ OCR | ไม่บังคับ |
 
-## 3. Deploy ขึ้น Cloudflare (บัญชีปลายทาง)
+ไม่ต้องสร้าง `TOKEN_ENC_KEY` เอง workflow สร้างให้อัตโนมัติครั้งแรกครั้งเดียว และไม่แสดงค่าออกมา
 
+### ขั้น C — Cloudflare (ขั้นสุดท้าย)
 > ใช้บัญชี Cloudflare ปลายทางผ่าน API token **ไม่เกี่ยวกับบัญชีที่ล็อกอินอยู่ในเครื่อง** และในโค้ดไม่มี account ID ฝังอยู่เลย
 
-### ขั้นที่ 1 — สร้าง API Token ในบัญชี Cloudflare ปลายทาง
 1. ล็อกอิน https://dash.cloudflare.com ด้วย**บัญชีปลายทาง**
 2. ถ้าบัญชีนี้ยังไม่เคยใช้ Workers ให้เข้าเมนู **Workers & Pages** หนึ่งครั้ง ระบบจะสร้างโดเมน `*.workers.dev` ให้
 3. (ไม่บังคับแต่แนะนำ) เข้าเมนู **R2** แล้วกดเปิดใช้งาน แผนฟรีได้ 10 GB แต่ Cloudflare อาจขอให้ผูกบัตรไว้ก่อน ถ้าไม่เปิด ระบบยังทำงานได้ แค่รูปของวันล่าสุดจะโหลดจาก Drive โดยตรงซึ่งช้ากว่า
@@ -116,35 +126,33 @@ npm test
 5. กด **+ Add more** เพื่อเพิ่มสิทธิ์ **Account → D1 → Edit** และ **Account → Workers R2 Storage → Edit**
 6. กดสร้าง แล้วคัดลอก token ไว้ ระบบจะแสดงค่า token ให้เห็นแค่ครั้งเดียว
 7. คัดลอก **Account ID** ด้วย (อยู่ในหน้า Workers & Pages ด้านขวา)
-
-### ขั้นที่ 2 — ใส่ secrets ใน GitHub
-ไปที่ https://github.com/Flashadminb/vehicle-photos/settings/secrets/actions แล้วกด **New repository secret** ทีละตัว:
-
-| ชื่อ | ค่า | จำเป็น |
-|---|---|---|
-| `CLOUDFLARE_API_TOKEN` | token จากขั้นที่ 1 | ✅ |
-| `CLOUDFLARE_ACCOUNT_ID` | Account ID จากขั้นที่ 1 | ✅ |
-| `SETUP_TOKEN` | ตั้งรหัสลับยาว ๆ เองได้เลย (ใช้ครั้งเดียวตอนสร้างแอดมินคนแรก) | ✅ |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | จากข้อ 2 (ใส่ทีหลังได้ แล้วรัน workflow ใหม่) | ภายหลัง |
-| `GOOGLE_VISION_API_KEY` / `AIFORTHAI_API_KEY` | ถ้าจะใช้ OCR | ไม่บังคับ |
-
-ไม่ต้องสร้าง `TOKEN_ENC_KEY` เอง workflow สร้างให้อัตโนมัติครั้งแรกครั้งเดียว และไม่แสดงค่าออกมา
-
-### ขั้นที่ 3 — กด Deploy
-ไปที่ https://github.com/Flashadminb/vehicle-photos/actions/workflows/deploy.yml แล้วกด **Run workflow**
+8. กลับไปที่หน้า secrets ของ GitHub แล้วเพิ่ม `CLOUDFLARE_API_TOKEN` และ `CLOUDFLARE_ACCOUNT_ID`
+9. ไปที่ https://github.com/Flashadminb/vehicle-photos/actions/workflows/deploy.yml แล้วกด **Run workflow**
 
 workflow จะทำทั้งหมดนี้ให้: รันเทสต์ → สร้างฐานข้อมูล D1 และ R2 (ถ้ายังไม่มี) → build → migrate ฐานข้อมูล → deploy → ตั้ง secrets
 
-พอเสร็จ หน้าสรุปของ workflow จะแสดง URL ของแอป, URL แดชบอร์ด และ **OAuth redirect URI** ที่ต้องนำไปใส่ใน Google Cloud (ข้อ 2 ขั้นที่ 4)
+พอเสร็จ หน้าสรุปของ workflow จะแสดง URL ของแอป, URL แดชบอร์ด และ **OAuth redirect URI**
 
-### ขั้นที่ 4 — หลัง deploy
-1. เปิด `https://<ชื่อ>.workers.dev/admin/` จะเจอหน้า **ตั้งค่าครั้งแรก** ให้ใส่ค่า `SETUP_TOKEN` แล้วสร้างผู้ดูแลสูงสุด
-2. ใส่ `GOOGLE_CLIENT_ID` และ `GOOGLE_CLIENT_SECRET` ใน GitHub secrets ถ้ายังไม่ได้ใส่ แล้วกด Run workflow อีกครั้ง
-3. ในแดชบอร์ด เข้าหน้า **Google Drive และการเก็บรักษา** → กด **เชื่อมต่อ Google Drive** แล้วล็อกอินด้วยบัญชีเจ้าของโฟลเดอร์รูป
+### ขั้น D — ใส่ redirect URI ใน Google
+กลับไปที่ Google Cloud Console → **Credentials** → OAuth client ที่สร้างไว้ในขั้น A → ช่อง **Authorized redirect URIs** แล้วใส่ URI จากหน้าสรุปของ workflow:
+```
+https://vehicle-photos.<ชื่อของคุณ>.workers.dev/api/admin/drive/oauth/callback
+```
+กด Save แล้วรอประมาณ 1–5 นาทีให้ Google อัปเดต
+
+### ขั้น E — ตั้งค่าในแดชบอร์ด
+1. เปิด `https://vehicle-photos.<ชื่อของคุณ>.workers.dev/admin/` จะเจอหน้า **ตั้งค่าครั้งแรก** ให้ใส่ค่า `SETUP_TOKEN` แล้วสร้างผู้ดูแลสูงสุด
+2. เข้าหน้า **Google Drive และการเก็บรักษา** → กด **เชื่อมต่อ Google Drive** แล้วล็อกอินด้วยบัญชีเจ้าของโฟลเดอร์รูป
+3. ในหน้าเดียวกัน ใช้ปุ่ม **ให้สิทธิ์ดู** เพื่อแชร์โฟลเดอร์ให้บัญชี Google ของแอดมินคนอื่น
 4. เข้าหน้า **สมาชิกและสิทธิ์** เพื่อสร้างบัญชีให้พนักงานภาคสนาม
 5. ให้พนักงานเปิด URL หลักบนมือถือ แล้วกด "เพิ่มลงหน้าจอหลัก" (Add to Home Screen)
 
-### ทางเลือก: deploy จากเครื่องตัวเอง
+**เรื่องความเป็นส่วนตัวของรูป:**
+- ระบบไม่สร้างลิงก์แบบ "ทุกคนที่มีลิงก์" เลย
+- ปุ่ม "เปิดชุดใน Drive" จะเปิดได้เฉพาะบัญชี Google ที่ได้รับแชร์โฟลเดอร์หลักไว้
+- การลบผู้ใช้ออกจากแดชบอร์ด**ไม่ได้**ถอนสิทธิ์ Drive ให้อัตโนมัติ ต้องถอนแชร์ใน Drive เองด้วย
+
+### ทางเลือก: deploy จากเครื่องตัวเอง (แทนขั้น C)
 ```bash
 npx wrangler login
 ```
@@ -172,7 +180,7 @@ npx wrangler whoami
 
 ---
 
-## 4. ข้อจำกัดที่ควรรู้
+## 3. ข้อจำกัดที่ควรรู้
 
 - **PWA อัปโหลดได้เฉพาะตอนเปิดแอปอยู่** รูปจะเก็บไว้ในเครื่องจนกว่าเซิร์ฟเวอร์ยืนยันว่าขึ้น Drive แล้ว และจะอัปโหลดต่อเมื่อเปิดแอปหรือกลับมาออนไลน์ ถ้าต้องการให้อัปโหลดเบื้องหลังจริง ต้องทำเป็นแอป Capacitor
 - **Google Drive 15 GB จะเต็มก่อนส่วนอื่น** (ถ้าวันละประมาณ 200 ชุด จะเต็มในราว 2–3 เดือน) ทางเลือก: ปิดการเก็บต้นฉบับในหน้า Drive settings หรือซื้อพื้นที่ Google One เพิ่ม
