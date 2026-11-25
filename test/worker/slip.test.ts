@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Client, createUser, loggedIn, putToDrive, rid, testEnv } from './helpers';
-import { getCurrentWorkflow, getSettings, publishWorkflow, saveSettings } from '../../src/worker/services/config';
+import { getCurrentWorkflow, getSettings, publishWorkflow, saveSettings, validateSteps } from '../../src/worker/services/config';
 import { setVisionOverride } from '../../src/worker/services/ocr';
 import { extractSlipPlate } from '../../src/shared/plate';
 import type { WorkflowVersion } from '../../src/shared/types';
@@ -94,5 +94,22 @@ describe('slip + plate photo', () => {
     const { client } = await loggedIn('field', 'operator');
     const r = await captureRound(client);
     expect((await round(r)).plate_text).toBe('บร 7856');
+  });
+});
+
+describe('step frame and photo size options', () => {
+  it('are kept when publishing a workflow; unknown values are dropped', async () => {
+    const before = await getCurrentWorkflow(testEnv);
+    const admin = await createUser('admin');
+    const steps = before.steps.map((s, i) =>
+      i === 0 ? { ...s, guide: 'slip_line', imageSize: 'small' } : i === 1 ? { ...s, guide: 'bogus', imageSize: 'huge' } : s,
+    );
+    await publishWorkflow(testEnv, validateSteps(steps, ['th', 'en']), 'frame test', admin.user.id, Date.now());
+    const wf = await getCurrentWorkflow(testEnv);
+    expect(wf.steps[0].guide).toBe('slip_line');
+    expect(wf.steps[0].imageSize).toBe('small');
+    expect(wf.steps[1].guide).toBeUndefined();
+    expect(wf.steps[1].imageSize).toBeUndefined();
+    await publishWorkflow(testEnv, before.steps, 'restore', admin.user.id, Date.now());
   });
 });

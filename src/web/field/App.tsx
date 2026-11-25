@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { api, ApiError } from '../shared/api';
 import { makeTranslator, stepLabel } from '../../shared/i18n';
 import type { FieldBootstrap } from '../../shared/types';
+import { stepGuide } from '../../shared/types';
 import { CaptureEngine } from './engine';
 import { CaptureView } from './CaptureView';
 import { IdbStore, requestPersistentStorage } from './storage';
@@ -342,7 +343,7 @@ function Capture({ boot, reload, onSignedOut }: { boot: Boot; reload: () => Prom
         onTake={() => void takePhoto()}
         shutterBusy={shutterBusy}
         viewfinder={
-          cameraMode === 'app' && step ? <Viewfinder camera={camera} guide={step.ocr ? (step.ocrKind === 'document' ? 'document' : 'plate') : null} t={t} flashKey={flashKey} /> : undefined
+          cameraMode === 'app' && step ? <Viewfinder camera={camera} guide={stepGuide(step)} t={t} flashKey={flashKey} /> : undefined
         }
         onNativeCamera={cameraMode === 'app' ? () => cameraInput.current?.click() : undefined}
         onUpload={() => fileInput.current?.click()}

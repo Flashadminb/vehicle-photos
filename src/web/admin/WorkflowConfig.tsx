@@ -125,6 +125,23 @@ export function WorkflowConfig() {
                         </select>
                       </label>
                     )}
+                    <label className="field-inline small">
+                      กรอบเล็ง
+                      <select className="input input-sm" value={s.guide ?? ''} onChange={(e) => update(i, { guide: (e.target.value || undefined) as WorkflowStep['guide'] })}>
+                        <option value="">อัตโนมัติ (ตาม OCR)</option>
+                        <option value="none">ไม่มีกรอบ</option>
+                        <option value="plate">ป้ายทะเบียน</option>
+                        <option value="slip">ใบบาร์ทั้งใบ (แนวนอน)</option>
+                        <option value="slip_line">ซูมบรรทัดทะเบียนบนใบบาร์</option>
+                      </select>
+                    </label>
+                    <label className="field-inline small">
+                      ขนาดรูป
+                      <select className="input input-sm" value={s.imageSize ?? 'normal'} onChange={(e) => update(i, { imageSize: e.target.value === 'small' ? 'small' : undefined })}>
+                        <option value="normal">ปกติ (1280 px)</option>
+                        <option value="small">เล็ก (960 px) ประหยัดพื้นที่</option>
+                      </select>
+                    </label>
                   </div>
                 </li>
               ))}

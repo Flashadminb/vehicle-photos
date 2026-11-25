@@ -1,4 +1,5 @@
 import type { BeginImageRequest, BeginImageResponse, CompleteImageRequest, CompleteImageResponse, FinalizeResponse, ImageSource, WorkflowVersion } from '../../shared/types';
+import { SMALL_IMAGE_EDGE } from '../../shared/types';
 
 /**
  * CaptureEngine — the field app's round state machine and durable upload queue.
@@ -78,7 +79,7 @@ export interface Imaging {
   /** `original`: a sharper original copy will be uploaded for this photo (encode it, capped in size). */
   prepare(blob: Blob, opts?: { original?: boolean }): Promise<{ original: Blob; width: number; height: number }>;
   /** Watermarked display copy + small thumbnail. */
-  render(original: Blob, wm: Watermark): Promise<{ display: Blob; thumb: Blob }>;
+  render(original: Blob, wm: Watermark, opts?: { displayEdge?: number }): Promise<{ display: Blob; thumb: Blob }>;
 }
 
 export interface FieldTransport {
@@ -521,7 +522,7 @@ export class CaptureEngine {
           publicId: begin.round.publicId,
           stepLabel: begin.stepLabel || this.deps.stepLabel(step),
           stepNumber: wf.steps.indexOf(step) + 1,
-        });
+        }, step.imageSize === 'small' ? { displayEdge: SMALL_IMAGE_EDGE } : undefined);
         if (!stillActive()) return;
         // Display copy, original and cache copies upload in parallel, with progress shown.
         const uploads = begin.uploads;

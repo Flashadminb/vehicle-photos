@@ -17,8 +17,24 @@ export interface WorkflowStep {
    * (e.g. the dispatch slip) where the plate is printed as "บร7865(เพชรบุรี)".
    */
   ocrKind?: 'plate' | 'document';
+  /**
+   * Aiming frame in the in-app camera. Absent = derived from OCR (plate → 'plate',
+   * document → 'slip', no OCR → none). 'slip_line' = a thin band for zooming on the plate line.
+   */
+  guide?: StepGuide;
+  /** 'small' = 960 px display copy (evidence photos that need no fine detail). Default 'normal'. */
+  imageSize?: 'normal' | 'small';
   /** Label per language code. */
   labels: Record<string, string>;
+}
+
+export type StepGuide = 'none' | 'plate' | 'slip' | 'slip_line';
+export const SMALL_IMAGE_EDGE = 960;
+
+/** The frame shown for a step (explicit choice, else derived from its OCR setting). */
+export function stepGuide(s: { ocr: boolean; ocrKind?: 'plate' | 'document'; guide?: StepGuide }): Exclude<StepGuide, 'none'> | null {
+  const g = s.guide ?? (s.ocr ? (s.ocrKind === 'document' ? 'slip' : 'plate') : 'none');
+  return g === 'none' ? null : g;
 }
 
 export interface WorkflowVersion {

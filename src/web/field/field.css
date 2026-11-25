@@ -157,3 +157,5 @@
 .fa-check-actions { display: grid; grid-template-columns: 1fr 1.4fr; gap: 12px; }
 .fa-check-actions .btn { min-height: 72px; font-size: 20px; border-radius: 18px; }
 @keyframes fa-fade { from { opacity: 0; } }
+/* Zoom on the printed plate line of the slip: a thin, wide band. */
+.fa-vf-guide.is-line { left: 4%; right: 4%; aspect-ratio: 6 / 1; }

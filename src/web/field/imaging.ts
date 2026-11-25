@@ -151,12 +151,12 @@ export function createImaging(opts: ImagingOptions): Imaging {
       decoded.set(out.blob, bmp);
       return { original: out.blob, width: out.w, height: out.h };
     },
-    async render(original, wm) {
+    async render(original, wm, ro) {
       const bmp = decoded.get(original) ?? (await decode(original));
       decoded.delete(original);
       try {
         // Display copy with the timestamp…
-        const { w, h } = fit(bmp.width, bmp.height, opts.displayEdge);
+        const { w, h } = fit(bmp.width, bmp.height, Math.min(opts.displayEdge, ro?.displayEdge ?? Infinity));
         const { canvas, ctx } = canvasFor(w, h);
         ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(bmp, 0, 0, w, h);
