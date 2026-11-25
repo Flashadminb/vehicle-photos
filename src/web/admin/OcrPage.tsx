@@ -3,6 +3,23 @@ import { api } from '../shared/api';
 import type { AppSettings, OcrProvider } from '../../shared/types';
 import { formatBangkok } from '../../shared/time';
 import { useMe } from './context';
+import { addFileToZip } from './zip';
+
+/** Download the Local OCR program with this computer's config.json already inside. */
+async function downloadAgentZip(name: string, token: string) {
+  const res = await fetch('/downloads/ocr-agent.zip', { cache: 'no-store' });
+  if (!res.ok) throw new Error('ดาวน์โหลดโปรแกรมไม่สำเร็จ');
+  const config = JSON.stringify({ server: location.origin, token, minConfidence: 0.7 }, null, 2);
+  const zip = addFileToZip(await res.arrayBuffer(), 'config.json', config);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([zip], { type: 'application/zip' }));
+  a.download = `ocr-agent-${name.replace(/[\\/:*?"<>|\s]+/g, '-')}.zip`;
+  // The link must be in the document for browsers to honour the file name.
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+}
 
 const MODES: { value: OcrProvider; title: string; desc: string }[] = [
   { value: 'none', title: 'ปิด', desc: 'ไม่อ่านป้ายอัตโนมัติ ผู้ดูแลกรอกทะเบียนเองในหน้ารายละเอียด' },
@@ -237,21 +254,25 @@ export function OcrPage() {
                 async () => {
                   const r = await api('POST', '/api/admin/ocr/agents', { name });
                   setNewToken({ name, token: r.token });
+                  await downloadAgentZip(name, r.token);
                   return r;
                 },
-                () => `เพิ่มเครื่อง ${name} แล้ว — คัดลอก token ด้านล่างไปใส่ในคอมเครื่องนั้น`,
+                () => `เพิ่มเครื่อง ${name} แล้ว — ดาวน์โหลดไฟล์ ocr-agent-${name}.zip (ใส่ token ไว้ให้แล้ว) นำไปแตกไฟล์บนคอมเครื่องนั้น แล้วดับเบิลคลิก start-windows.bat`,
               );
               setNewName('');
             }}
           >
             <input className="input" placeholder="ชื่อเครื่อง เช่น PC-ออฟฟิศ" value={newName} onChange={(e) => setNewName(e.target.value)} required maxLength={40} aria-label="ชื่อเครื่อง" />
-            <button className="btn">+ เพิ่มเครื่อง</button>
+            <button className="btn btn-primary">+ เพิ่มเครื่อง และดาวน์โหลดโปรแกรม</button>
           </form>
         )}
         {newToken && (
           <div className="sub-card">
-            <strong>config.json สำหรับ {newToken.name}</strong>
-            <p className="small muted">token นี้แสดงครั้งเดียว ให้คัดลอกทั้งหมดไปวางในไฟล์ <code>config.json</code> ในโฟลเดอร์โปรแกรมบนคอมเครื่องนั้น</p>
+            <strong>{newToken.name}: ดาวน์โหลดแล้ว (มี token อยู่ในไฟล์ zip แล้ว)</strong>
+            <p className="small muted">
+              ถ้าไฟล์ไม่ถูกดาวน์โหลด กด <button className="btn btn-sm" onClick={() => void downloadAgentZip(newToken.name, newToken.token)}>⬇ ดาวน์โหลดอีกครั้ง</button> · ไฟล์นี้มี token ของเครื่องนี้ อย่าส่งต่อให้คนอื่น ·
+              ถ้าใช้ไฟล์ zip ทั่วไป ให้วาง token ตอนเปิดโปรแกรมครั้งแรก:
+            </p>
             <pre className="raw">{JSON.stringify({ server: location.origin, token: newToken.token, minConfidence: 0.7 }, null, 2)}</pre>
             <div className="row-actions">
               <button className="btn btn-sm" onClick={() => void navigator.clipboard.writeText(JSON.stringify({ server: location.origin, token: newToken.token, minConfidence: 0.7 }, null, 2))}>คัดลอก</button>
@@ -300,12 +321,9 @@ export function OcrPage() {
       <section className="card section">
         <h2>วิธีติดตั้งบนคอม (Windows)</h2>
         <ol className="small policy">
-          <li>ติดตั้ง <a href="https://nodejs.org" target="_blank" rel="noopener noreferrer">Node.js</a> เวอร์ชัน LTS (กด Next จนเสร็จ)</li>
-          <li>
-            ดาวน์โหลดโปรแกรม: <a className="btn btn-sm" href="/downloads/ocr-agent.zip">⬇ ocr-agent.zip</a> แล้วแตกไฟล์ไว้ในโฟลเดอร์ เช่น <code>C:\ocr-agent</code>
-          </li>
-          <li>กด “+ เพิ่มเครื่อง” ด้านบน แล้วกด <strong>คัดลอก</strong></li>
-          <li>ดับเบิลคลิก <code>start-windows.bat</code> → ครั้งแรกจะถามหา token ให้<strong>คลิกขวาในหน้าต่างดำเพื่อวาง</strong> แล้วกด Enter (โปรแกรมสร้าง config.json ให้เอง) → ติดตั้งประมาณ 1–3 นาที เมื่อขึ้น “พร้อมทำงาน” สถานะเครื่องในหน้านี้จะเป็น “เปิดอยู่”</li>
+          <li>กดปุ่ม <strong>“+ เพิ่มเครื่อง และดาวน์โหลดโปรแกรม”</strong> ด้านบน (ตั้งชื่อเครื่องก่อน) จะได้ไฟล์ <code>ocr-agent-ชื่อเครื่อง.zip</code> ที่ใส่ token ไว้แล้ว</li>
+          <li>นำไฟล์ไปที่คอมเครื่องนั้น → คลิกขวา → <strong>Extract All</strong> (แตกไฟล์) เช่นไว้ที่ <code>C:\ocr-agent</code></li>
+          <li>ดับเบิลคลิก <code>start-windows.bat</code> — ถ้ายังไม่มี Node.js โปรแกรมจะติดตั้งให้เอง (กด Yes ถ้า Windows ถาม) แล้วติดตั้งส่วนประกอบ 1–3 นาที เมื่อขึ้น “พร้อมทำงาน” สถานะเครื่องในหน้านี้จะเป็น “เปิดอยู่”</li>
           <li>(ไม่บังคับ) ให้เปิดอัตโนมัติตอนเปิดคอม: กด Win+R พิมพ์ <code>shell:startup</code> แล้ววาง shortcut ของ start-windows.bat</li>
           <li>ทดสอบความแม่นกับรูปของคุณ: เปิด Command Prompt ในโฟลเดอร์ แล้วพิมพ์ <code>node test-image.mjs โฟลเดอร์รูป</code> (ตั้งชื่อไฟล์เป็นทะเบียนจริง เช่น <code>กข1234.jpg</code> จะได้คะแนนความแม่น)</li>
         </ol>

@@ -88,6 +88,9 @@ export async function exportSetsToExcel(
   a.href = URL.createObjectURL(blob);
   const stamp = formatBangkok(Date.now()).replace(/[: ]/g, '-');
   a.download = `photo-sets_${stamp}.xlsx`;
+  // The link must be in the document for browsers to honour the file name.
+  document.body.appendChild(a);
   a.click();
+  a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
 }
