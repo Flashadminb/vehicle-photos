@@ -59,6 +59,9 @@ export function ocrScore(confidence: number | null, kind: OcrKind) {
 /** A plate photo is not read again when a slip reading this good already exists. */
 export const SKIP_PLATE_SCORE = 0.85;
 
+/** Plate-photo readings below this confidence never fill in the plate. */
+export const MIN_PLATE_CONFIDENCE = 0.5;
+
 // ---------- Vision usage cap ----------
 export function visionPeriod(now: number) {
   // Google's free tier is per calendar month; UTC is used here and the 90 % cap leaves a margin.
@@ -228,7 +231,9 @@ export async function applyOcrResult(
 ) {
   const round = await env.DB.prepare(`SELECT plate_text, plate_norm, plate_source, plate_ocr_score FROM rounds WHERE id = ?`).bind(roundId).first<any>();
   if (!round) return;
-  const plate = result.plate ? result.plate.normalize('NFC').replace(/\s+/g, ' ').trim().slice(0, 30) : null;
+  // A plate-photo reading this unsure is noise, not a plate: keep it only as raw text for the admin.
+  const tooUnsure = kind === 'plate' && result.confidence != null && result.confidence < MIN_PLATE_CONFIDENCE;
+  const plate = result.plate && !tooUnsure ? result.plate.normalize('NFC').replace(/\s+/g, ' ').trim().slice(0, 30) : null;
   let score = ocrScore(result.confidence, kind);
   // Two readings (slip + plate photo) that agree reinforce each other.
   if (plate && round.plate_source === 'ocr' && round.plate_norm === normalizePlate(plate)) score = Math.max(score, round.plate_ocr_score ?? 0) + 0.05;

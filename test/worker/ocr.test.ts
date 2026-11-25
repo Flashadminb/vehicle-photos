@@ -147,6 +147,20 @@ describe('Local OCR computers', () => {
     expect((await round(r)).plate_text).toBe('ขค 777');
   });
 
+  it('an unsure plate reading (e.g. noise "ร 4" at 8%) never fills in the plate', async () => {
+    await setSettings({ ocrProvider: 'local' });
+    const a = await newAgent('PC-unsure');
+    const { client: field } = await loggedIn('field', 'operator');
+    const r = await captureRound(field);
+    const p = await a.call('POST', '/api/ocr-agent/poll', {});
+    // The agent judged it too unsure (plate: null) — the server must not re-parse "ร 4" out of the text.
+    expect((await a.call('POST', `/api/ocr-agent/jobs/${p.body.job.id}/result`, { text: 'ร 4\nFLASH', plate: null, confidence: 0.08 })).status).toBe(200);
+    const row = await round(r);
+    expect(row.plate_text).toBeNull();
+    expect(row.plate_source).toBe('none');
+    expect(row.plate_raw).toContain('ร 4'); // kept for the admin to look at
+  });
+
   it('local_then_vision: prefers an online computer, falls back to Vision when none is on', async () => {
     await setSettings({ ocrProvider: 'local_then_vision', visionMonthlyFree: 1000, visionCapPct: 90 });
     const { client: field } = await loggedIn('field', 'operator');

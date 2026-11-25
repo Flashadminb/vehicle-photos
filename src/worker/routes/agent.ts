@@ -115,9 +115,12 @@ agent.post('/jobs/:id/result', async (c) => {
   const raw = String(body.text ?? '').slice(0, 2000);
   const kind = (JSON.parse(job.payload ?? '{}').kind ?? 'plate') as 'plate' | 'document';
   const parsed = resultFromText(raw, typeof body.confidence === 'number' ? Math.max(0, Math.min(1, body.confidence)) : null, kind);
-  // Prefer the agent's own plate parse when it matches the Thai plate pattern.
+  // Prefer the agent's own plate parse when it matches the Thai plate pattern. When the agent
+  // judged a plate photo too uncertain (plate = null), do NOT re-parse its raw text into a plate:
+  // that turned noise such as "ร 4" (8 %) into a plate. Slips keep the strict slip pattern.
   const agentPlate = body.plate ? resultFromText(String(body.plate), null).plate : null;
-  const result = { ...parsed, plate: agentPlate ?? parsed.plate };
+  const agentRejected = body.plate === null && kind === 'plate';
+  const result = { ...parsed, plate: agentPlate ?? (agentRejected ? null : parsed.plate) };
   await applyOcrResult(c.env, getDrive(c.env, new URL(c.req.url).origin), job.ref_id, result, `ocr:local:${a.name}${kind === 'document' ? ':slip' : ''}`.slice(0, 60), now, kind);
   await c.env.DB.batch([
     c.env.DB.prepare(`UPDATE jobs SET status = 'done', updated_at = ? WHERE id = ?`).bind(now, job.id),
