@@ -1,0 +1,5 @@
+{
+  "server": "https://vehicle-photos.kittichai-sph.workers.dev",
+  "token": "วาง token ที่ได้จากแดชบอร์ดตรงนี้",
+  "minConfidence": 0.6
+}

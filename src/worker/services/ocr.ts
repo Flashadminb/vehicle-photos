@@ -1,7 +1,10 @@
 import type { Env } from '../env';
-import type { OcrProvider } from '../../shared/types';
-import { extractThaiPlate } from '../../shared/plate';
-import { b64 } from '../util';
+import type { AppSettings } from '../../shared/types';
+import { extractThaiPlate, normalizePlate, plateDigits } from '../../shared/plate';
+import { b64, fromB64 } from '../util';
+import type { DriveClient } from '../drive/types';
+import { syncRoundFolderName } from '../drive/folders';
+import { getCache } from './cache';
 
 export interface OcrResult {
   raw: string;
@@ -10,69 +13,205 @@ export interface OcrResult {
 }
 
 /**
- * Plate recognition providers. Recognition is never perfect: results are stored as
- * raw text + a normalised plate + confidence, never block capture or DONE (unless an
- * admin enables ocrBlocksDone), and can always be corrected by an administrator.
+ * Plate recognition. Results are stored as raw text + normalised plate + confidence,
+ * never block capture or DONE (unless ocrBlocksDone), and an administrator's manual
+ * correction always wins. Recognition is never perfect: validate with real plates.
  *
- * IMPORTANT: validate the chosen provider with real representative plate photos before
- * relying on it. The AI for Thai response format below is parsed defensively and is
- * marked experimental in the README.
+ * Routing between Google Vision and the Local OCR computers is decided by
+ * decideRoute(); Vision is hard-capped at visionCapPct % of the monthly free units.
  */
-export async function recognizePlate(env: Env, provider: OcrProvider, image: ArrayBuffer): Promise<OcrResult> {
-  if (provider === 'google_vision') return googleVision(env, image);
-  if (provider === 'aiforthai') return aiForThai(env, image);
-  throw new Error('OCR is disabled.');
+
+// ---------- test hook ----------
+type VisionFn = (env: Env, src: { url?: string; bytes?: () => Promise<ArrayBuffer> }) => Promise<OcrResult>;
+let visionOverride: VisionFn | null = null;
+export function setVisionOverride(fn: VisionFn | null) {
+  visionOverride = fn;
 }
 
-async function googleVision(env: Env, image: ArrayBuffer): Promise<OcrResult> {
+// ---------- text clean-up ----------
+/** Drop the lines our own timestamp watermark adds, so they are never mistaken for a plate. */
+export function stripWatermarkLines(text: string): string {
+  return text
+    .split(/\r?\n/)
+    .filter((l) => !/(PF-\d|ถ่ายเมื่อ|เซิร์ฟเวอร์|Captured|Server received|EXIF|ไฟล์อัปโหลด|Uploaded file|\d{1,2}\/\d{1,2}\/\d{4})/i.test(l))
+    .join('\n');
+}
+
+export function resultFromText(raw: string, confidence: number | null): OcrResult {
+  return { raw: raw.slice(0, 2000), plate: extractThaiPlate(stripWatermarkLines(raw)), confidence };
+}
+
+// ---------- Vision usage cap ----------
+export function visionPeriod(now: number) {
+  // Google's free tier is per calendar month; UTC is used here and the 90 % cap leaves a margin.
+  return `vision:${new Date(now).toISOString().slice(0, 7)}`;
+}
+
+export function visionCap(settings: AppSettings) {
+  return Math.floor((settings.visionMonthlyFree * settings.visionCapPct) / 100);
+}
+
+export async function visionUsage(env: Env, now = Date.now()) {
+  const r = await env.DB.prepare(`SELECT count FROM ocr_usage WHERE period = ?`).bind(visionPeriod(now)).first<{ count: number }>();
+  return r?.count ?? 0;
+}
+
+/** Atomically reserve one Vision call. Returns false once the cap is reached. */
+export async function reserveVisionCall(env: Env, settings: AppSettings, now = Date.now()): Promise<boolean> {
+  const cap = visionCap(settings);
+  if (cap <= 0) return false;
+  const r = await env.DB.prepare(
+    `INSERT INTO ocr_usage (period, count, updated_at) VALUES (?1, 1, ?2)
+     ON CONFLICT(period) DO UPDATE SET count = ocr_usage.count + 1, updated_at = ?2 WHERE ocr_usage.count < ?3
+     RETURNING count`,
+  )
+    .bind(visionPeriod(now), now, cap)
+    .first<{ count: number }>();
+  return !!r;
+}
+
+// ---------- online Local OCR computers ----------
+export async function onlineAgents(env: Env, settings: AppSettings, now = Date.now()) {
+  const r = await env.DB.prepare(`SELECT COUNT(*) AS n FROM ocr_agents WHERE disabled = 0 AND last_seen_at > ?`)
+    .bind(now - settings.agentOnlineSeconds * 1000)
+    .first<{ n: number }>();
+  return r?.n ?? 0;
+}
+
+export type Route = 'vision' | 'aiforthai' | 'local' | 'wait_quota' | 'off';
+
+/**
+ * Decide who reads this plate.
+ *  - vision_then_local: Vision while under the cap, otherwise wait for a Local OCR computer.
+ *  - local_then_vision: a Local OCR computer if any is online, otherwise Vision within the cap,
+ *    otherwise wait for a computer.
+ *  - google_vision: Vision within the cap, otherwise wait for next month (or the admin button).
+ * Vision calls are reserved atomically, so concurrent jobs can never go over the cap.
+ */
+export async function decideRoute(env: Env, settings: AppSettings, now = Date.now()): Promise<Route> {
+  switch (settings.ocrProvider) {
+    case 'none':
+      return 'off';
+    case 'aiforthai':
+      return 'aiforthai';
+    case 'local':
+      return 'local';
+    case 'google_vision':
+      return (await reserveVisionCall(env, settings, now)) ? 'vision' : 'wait_quota';
+    case 'vision_then_local':
+      return (await reserveVisionCall(env, settings, now)) ? 'vision' : 'local';
+    case 'local_then_vision':
+      if ((await onlineAgents(env, settings, now)) > 0) return 'local';
+      return (await reserveVisionCall(env, settings, now)) ? 'vision' : 'local';
+  }
+}
+
+// ---------- signed image links (let Google fetch the photo itself) ----------
+async function hmac(key: string, data: string) {
+  const k = await crypto.subtle.importKey('raw', fromB64(key), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', k, new TextEncoder().encode(data));
+  return b64(new Uint8Array(sig)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+export async function signedImageUrl(env: Env, baseUrl: string, imageId: string, now = Date.now()) {
+  if (!env.TOKEN_ENC_KEY || !baseUrl) return null;
+  const exp = now + 10 * 60_000;
+  const sig = await hmac(env.TOKEN_ENC_KEY, `${imageId}.${exp}`);
+  return `${baseUrl.replace(/\/$/, '')}/api/ocr-image/${encodeURIComponent(imageId)}?exp=${exp}&sig=${sig}`;
+}
+
+export async function verifyImageSig(env: Env, imageId: string, exp: string, sig: string, now = Date.now()) {
+  if (!env.TOKEN_ENC_KEY || Number(exp) < now) return false;
+  const expected = await hmac(env.TOKEN_ENC_KEY, `${imageId}.${exp}`);
+  if (expected.length !== sig.length) return false;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ sig.charCodeAt(i);
+  return diff === 0;
+}
+
+/** The best copy for recognition: the un-watermarked original if kept, else the display copy. */
+export async function ocrImageResponse(env: Env, drive: DriveClient, img: any): Promise<Response> {
+  if (img.drive_file_id) return drive.download(img.drive_file_id);
+  const cached = await getCache(env, img.id, 'display');
+  if (cached) return new Response(cached.body, { headers: { 'Content-Type': 'image/jpeg' } });
+  return drive.download(img.drive_display_file_id);
+}
+
+// ---------- providers ----------
+export async function googleVision(env: Env, src: { url?: string; bytes?: () => Promise<ArrayBuffer> }): Promise<OcrResult> {
+  if (visionOverride) return visionOverride(env, src);
   if (!env.GOOGLE_VISION_API_KEY) throw new Error('GOOGLE_VISION_API_KEY is not configured.');
-  const res = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${encodeURIComponent(env.GOOGLE_VISION_API_KEY)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      requests: [
-        {
-          image: { content: b64(new Uint8Array(image)) },
-          features: [{ type: 'TEXT_DETECTION' }],
-          imageContext: { languageHints: ['th', 'en'] },
-        },
-      ],
-    }),
-  });
-  const body = (await res.json()) as any;
+  const call = async (image: Record<string, unknown>) => {
+    const res = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${encodeURIComponent(env.GOOGLE_VISION_API_KEY!)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requests: [{ image, features: [{ type: 'TEXT_DETECTION' }], imageContext: { languageHints: ['th', 'en'] } }] }),
+    });
+    return { res, body: (await res.json()) as any };
+  };
+  // Prefer a signed URL: Google downloads the photo itself, so the Worker never has to
+  // base64-encode megabytes (which would exceed the free plan's 10 ms CPU budget).
+  let { res, body } = src.url ? await call({ source: { imageUri: src.url } }) : { res: null as Response | null, body: null as any };
+  if (!res || !res.ok || body?.responses?.[0]?.error) {
+    if (!src.bytes) throw new Error(`Vision API error: ${body?.error?.message ?? body?.responses?.[0]?.error?.message ?? res?.status}`);
+    ({ res, body } = await call({ content: b64(new Uint8Array(await src.bytes())) }));
+  }
   if (!res.ok || body.responses?.[0]?.error) {
     throw new Error(`Vision API error: ${body.error?.message ?? body.responses?.[0]?.error?.message ?? res.status}`);
   }
   const text: string = body.responses?.[0]?.fullTextAnnotation?.text ?? body.responses?.[0]?.textAnnotations?.[0]?.description ?? '';
-  // Vision gives per-page confidence for the full text annotation when available.
   const conf = body.responses?.[0]?.fullTextAnnotation?.pages?.[0]?.confidence;
-  return { raw: text.slice(0, 2000), plate: extractThaiPlate(text), confidence: typeof conf === 'number' ? conf : null };
+  return resultFromText(text, typeof conf === 'number' ? conf : null);
 }
 
-async function aiForThai(env: Env, image: ArrayBuffer): Promise<OcrResult> {
+export async function aiForThai(env: Env, image: ArrayBuffer): Promise<OcrResult> {
   if (!env.AIFORTHAI_API_KEY) throw new Error('AIFORTHAI_API_KEY is not configured.');
   const form = new FormData();
   form.append('image', new Blob([image], { type: 'image/jpeg' }), 'plate.jpg');
   form.append('crop', '1');
   form.append('rotate', '1');
-  const res = await fetch('https://api.aiforthai.in.th/lpr-v2', {
-    method: 'POST',
-    headers: { Apikey: env.AIFORTHAI_API_KEY },
-    body: form,
-  });
+  const res = await fetch('https://api.aiforthai.in.th/lpr-v2', { method: 'POST', headers: { Apikey: env.AIFORTHAI_API_KEY }, body: form });
   const text = await res.text();
   if (!res.ok) throw new Error(`AI for Thai error ${res.status}: ${text.slice(0, 200)}`);
-  let plate: string | null = null;
-  let confidence: number | null = null;
   try {
     const body = JSON.parse(text);
     const first = Array.isArray(body) ? body[0] : body;
     const candidate: string = first?.lpr ?? first?.plate ?? first?.license_plate ?? '';
-    plate = extractThaiPlate(candidate) ?? (candidate ? candidate.split(/\s+/).slice(0, 2).join(' ') : null);
     const c = first?.conf ?? first?.confidence;
-    confidence = typeof c === 'number' ? (c > 1 ? c / 100 : c) : null;
+    return {
+      raw: text.slice(0, 2000),
+      plate: extractThaiPlate(candidate) ?? (candidate ? candidate.split(/\s+/).slice(0, 2).join(' ') : null),
+      confidence: typeof c === 'number' ? (c > 1 ? c / 100 : c) : null,
+    };
   } catch {
-    plate = extractThaiPlate(text);
+    return resultFromText(text, null);
   }
-  return { raw: text.slice(0, 2000), plate, confidence };
+}
+
+// ---------- applying a result ----------
+/**
+ * Store an OCR result on the round (unless an admin already corrected the plate by hand),
+ * record it in the plate history, and rename the Drive folder (same folder ID).
+ */
+export async function applyOcrResult(env: Env, drive: DriveClient, roundId: string, result: OcrResult, source: string, now = Date.now()) {
+  const round = await env.DB.prepare(`SELECT plate_text FROM rounds WHERE id = ?`).bind(roundId).first<any>();
+  if (!round) return;
+  const plate = result.plate ? result.plate.normalize('NFC').replace(/\s+/g, ' ').trim().slice(0, 30) : null;
+  await env.DB.prepare(
+    `UPDATE rounds SET plate_raw = ?, plate_confidence = ?, ocr_status = 'done',
+       plate_text = CASE WHEN plate_source = 'manual' THEN plate_text ELSE ? END,
+       plate_norm = CASE WHEN plate_source = 'manual' THEN plate_norm ELSE ? END,
+       plate_digits = CASE WHEN plate_source = 'manual' THEN plate_digits ELSE ? END,
+       plate_source = CASE WHEN plate_source = 'manual' THEN 'manual' WHEN ? IS NULL THEN 'none' ELSE 'ocr' END,
+       plate_updated_at = ?, updated_at = ?
+     WHERE id = ?`,
+  )
+    .bind(result.raw, result.confidence, plate, plate ? normalizePlate(plate) : null, plate ? plateDigits(plate) || null : null, plate, now, now, roundId)
+    .run();
+  await env.DB.prepare(
+    `INSERT INTO plate_history (round_id, at, actor_id, source, old_text, new_text, raw, confidence) VALUES (?, ?, NULL, ?, ?, ?, ?, ?)`,
+  )
+    .bind(roundId, now, source.slice(0, 60), round.plate_text, plate, result.raw.slice(0, 500), result.confidence)
+    .run();
+  await syncRoundFolderName(env, drive, roundId);
 }

@@ -9,6 +9,7 @@ import { exportSetsToExcel } from './excel';
 type Dir = 'first' | 'next' | 'prev' | 'last';
 
 const STATUS_TH: Record<string, string> = { finalized: 'เสร็จสมบูรณ์', open: 'กำลังถ่าย', abandoned: 'ถูกทิ้งไว้' };
+const OCR_STATUS_TH: Record<string, string> = { none: 'ยังไม่เริ่ม', disabled: 'ปิดอยู่', pending: 'รออ่าน', waiting_local: 'รอคอม Local OCR', waiting_quota: 'พักไว้ (Vision เต็ม)', done: 'อ่านแล้ว', failed: 'อ่านไม่สำเร็จ', skipped: 'ข้าม (แก้มือแล้ว)' };
 const PLATE_SRC_TH: Record<string, string> = { none: 'ยังไม่มี', ocr: 'OCR', manual: 'ผู้ดูแลแก้ไข' };
 
 export function History() {
@@ -433,7 +434,7 @@ function SetDetails({ id, onClose, onChanged }: { id: string; onClose: () => voi
             <h3>ทะเบียนรถ</h3>
             <p className="small muted">
               ที่มา: {PLATE_SRC_TH[d.plate.source] ?? d.plate.source}
-              {d.plate.confidence != null && ` · ความมั่นใจ OCR ${(d.plate.confidence * 100).toFixed(0)}%`} · สถานะ OCR: {d.plate.ocrStatus} · คำแทนเมื่อไม่ทราบทะเบียน: “{d.plate.unknownLabel}”
+              {d.plate.confidence != null && ` · ความมั่นใจ OCR ${(d.plate.confidence * 100).toFixed(0)}%`} · สถานะ OCR: {OCR_STATUS_TH[d.plate.ocrStatus] ?? d.plate.ocrStatus} · คำแทนเมื่อไม่ทราบทะเบียน: “{d.plate.unknownLabel}”
             </p>
             {d.plate.raw && (
               <details>
@@ -463,6 +464,42 @@ function SetDetails({ id, onClose, onChanged }: { id: string; onClose: () => voi
                 <input className="input" value={plate} onChange={(e) => setPlate(e.target.value)} placeholder="เช่น 1กข 2345" aria-label="ทะเบียนที่แก้ไข" />
                 <button className="btn btn-primary btn-sm" disabled={busy || d.set.status === 'open'}>บันทึกการแก้ไข</button>
               </form>
+            )}
+            {me.can('sets.editPlate') && d.set.status !== 'open' && (
+              <div className="row-actions">
+                <button
+                  className="btn btn-sm"
+                  disabled={busy}
+                  onClick={async () => {
+                    setMsg('');
+                    try {
+                      await api('POST', `/api/admin/sets/${id}/ocr`, { target: 'auto' });
+                      setMsg('ส่งอ่านป้ายใหม่แล้ว ผลจะขึ้นภายในไม่กี่วินาทีถึงไม่กี่นาที');
+                      setTimeout(reload, 4000);
+                    } catch (err) {
+                      setMsg((err as Error).message);
+                    }
+                  }}
+                >
+                  อ่านป้ายใหม่
+                </button>
+                <button
+                  className="btn btn-sm"
+                  disabled={busy}
+                  onClick={async () => {
+                    setMsg('');
+                    try {
+                      await api('POST', `/api/admin/sets/${id}/ocr`, { target: 'local' });
+                      setMsg('ส่งให้คอม Local OCR แล้ว จะอ่านเมื่อมีคอมเปิดอยู่');
+                    } catch (err) {
+                      setMsg((err as Error).message);
+                    }
+                  }}
+                >
+                  อ่านด้วย Local OCR
+                </button>
+                {d.plate.source === 'manual' && <span className="small muted">ทะเบียนนี้แก้มือแล้ว ผล OCR ใหม่จะไม่ทับ</span>}
+              </div>
             )}
             {d.plate.history.length > 0 && (
               <ul className="history-list small">

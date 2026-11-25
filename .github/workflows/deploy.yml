@@ -35,7 +35,11 @@ jobs:
         id: prep
         run: node scripts/ci-prepare.mjs
       - name: Build
-        run: npx vite build
+        run: |
+          npx vite build
+          # Downloadable Local OCR program (no node_modules, no secrets).
+          mkdir -p dist/downloads
+          (cd ocr-agent && zip -qr ../dist/downloads/ocr-agent.zip . -x 'node_modules/*' 'config.json' 'debug/*' '.tesscache/*')
       - name: Apply database migrations
         run: npx wrangler d1 migrations apply DB --remote
       - name: Deploy Worker
@@ -53,6 +57,11 @@ jobs:
           AIFORTHAI_API_KEY: ${{ secrets.AIFORTHAI_API_KEY }}
         run: |
           existing=$(npx wrangler secret list 2>/dev/null || echo "[]")
+          url="${{ steps.deploy.outputs.url }}"
+          if [ -n "$url" ] && ! echo "$existing" | grep -q '"PUBLIC_BASE_URL"'; then
+            printf '%s' "$url" | npx wrangler secret put PUBLIC_BASE_URL > /dev/null
+            echo "Set PUBLIC_BASE_URL"
+          fi
           if ! echo "$existing" | grep -q '"TOKEN_ENC_KEY"'; then
             echo "Generating TOKEN_ENC_KEY (once)…"
             openssl rand -base64 32 | tr -d '\n' | npx wrangler secret put TOKEN_ENC_KEY > /dev/null

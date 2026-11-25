@@ -15,9 +15,10 @@ import {
 } from '../auth/session';
 import { can, manageableRoles, permissionsFor } from '../auth/permissions';
 import { hashPassword, verifyPassword } from '../crypto';
-import { ApiError, badRequest, clientIp, forbidden, int, notFound, randomToken, readJson, str, uuid } from '../util';
+import { ApiError, badRequest, clientIp, forbidden, int, notFound, randomToken, readJson, sha256Hex, str, uuid } from '../util';
 import {
   getCurrentWorkflow,
+  getWorkflow,
   getLanguages,
   getSettings,
   getTranslationOverrides,
@@ -32,6 +33,7 @@ import { changeVisibility, loadVisibleSet, setDetails, updatePlate, type SetActi
 import { cacheUsage, evictCache, getCache, type CacheKind } from '../services/cache';
 import { audit } from '../services/audit';
 import { processJobs } from '../services/maintenance';
+import { visionCap, visionPeriod, visionUsage } from '../services/ocr';
 import { getDrive, isDemo, effectiveRoot } from '../drive';
 import { buildAuthUrl, clearToken, exchangeCode, loadToken, oauthRedirectUri, saveToken } from '../drive/google';
 import { syncRoundFolderName } from '../drive/folders';
@@ -246,7 +248,7 @@ admin.put('/settings', requirePermission('config.edit'), async (c) => {
   const user = c.get('user');
   const current = await getSettings(c.env);
   // Storage/Drive-related settings are Super Admin only.
-  const superOnly: (keyof AppSettings)[] = ['driveRootFolderId', 'cacheQuotaBytes', 'cacheThresholdPct', 'cacheTargetPct', 'dbQuotaBytes', 'dbThresholdPct', 'keepOriginals', 'ocrProvider'];
+  const superOnly: (keyof AppSettings)[] = ['driveRootFolderId', 'cacheQuotaBytes', 'cacheThresholdPct', 'cacheTargetPct', 'dbQuotaBytes', 'dbThresholdPct', 'keepOriginals', 'ocrProvider', 'visionMonthlyFree', 'visionCapPct'];
   for (const k of superOnly) {
     if (k in patch && patch[k] !== current[k] && !can(user.role, 'drive.manage')) throw forbidden(`Only a Super Admin can change ${k}.`);
   }
@@ -591,6 +593,110 @@ admin.get('/audit', requirePermission('audit.view'), async (c) => {
   const hasMore = results.length > pageSize;
   const rows = results.slice(0, pageSize);
   return c.json({ rows, nextBefore: hasMore ? rows[rows.length - 1].id : null });
+});
+
+// ---------- Plate recognition (OCR) ----------
+admin.get('/ocr/status', requirePermission('sets.view'), async (c) => {
+  const settings = await getSettings(c.env);
+  const now = Date.now();
+  const { results: agents } = await c.env.DB.prepare(
+    `SELECT id, name, disabled, created_at, last_seen_at, last_ip, version, jobs_done FROM ocr_agents ORDER BY created_at`,
+  ).all<any>();
+  const { results: queue } = await c.env.DB.prepare(`SELECT status, COUNT(*) AS n FROM jobs WHERE kind = 'ocr' AND status != 'done' GROUP BY status`).all<any>();
+  const onlineMs = settings.agentOnlineSeconds * 1000;
+  return c.json({
+    mode: settings.ocrProvider,
+    visionKeyConfigured: !!c.env.GOOGLE_VISION_API_KEY,
+    vision: { used: await visionUsage(c.env, now), cap: visionCap(settings), free: settings.visionMonthlyFree, capPct: settings.visionCapPct, period: visionPeriod(now).slice(7) },
+    agents: agents.map((a) => ({ ...a, online: !a.disabled && !!a.last_seen_at && now - a.last_seen_at < onlineMs })),
+    queue: Object.fromEntries(queue.map((q) => [q.status, q.n])),
+    pollSeconds: settings.agentPollSeconds,
+  });
+});
+
+admin.post('/ocr/agents', requirePermission('drive.manage'), async (c) => {
+  const { name } = await readJson<{ name: string }>(c);
+  const token = `vpa_${randomToken(24)}`;
+  const id = uuid();
+  await c.env.DB.prepare(`INSERT INTO ocr_agents (id, name, token_hash, created_at, created_by) VALUES (?, ?, ?, ?, ?)`)
+    .bind(id, str(name, 'name', { max: 40 }), await sha256Hex(token), Date.now(), c.get('user').id)
+    .run();
+  await audit(c.env, c.get('user'), 'ocr.agent_created', { type: 'ocr_agent', id }, { name }, clientIp(c));
+  // The token is shown once; only its hash is stored.
+  return c.json({ id, token });
+});
+
+admin.patch('/ocr/agents/:id', requirePermission('drive.manage'), async (c) => {
+  const { disabled } = await readJson<{ disabled: boolean }>(c);
+  await c.env.DB.prepare(`UPDATE ocr_agents SET disabled = ? WHERE id = ?`).bind(disabled ? 1 : 0, c.req.param('id')).run();
+  if (disabled) {
+    // Give its leased jobs back to the queue immediately.
+    await c.env.DB.prepare(`UPDATE jobs SET status = 'local', agent_id = NULL WHERE agent_id = ? AND status = 'local_running'`).bind(c.req.param('id')).run();
+  }
+  await audit(c.env, c.get('user'), disabled ? 'ocr.agent_disabled' : 'ocr.agent_enabled', { type: 'ocr_agent', id: c.req.param('id') }, undefined, clientIp(c));
+  return c.json({ ok: true });
+});
+
+admin.delete('/ocr/agents/:id', requirePermission('drive.manage'), async (c) => {
+  const id = c.req.param('id');
+  await c.env.DB.batch([
+    c.env.DB.prepare(`UPDATE jobs SET status = 'local', agent_id = NULL WHERE agent_id = ? AND status = 'local_running'`).bind(id),
+    c.env.DB.prepare(`DELETE FROM ocr_agents WHERE id = ?`).bind(id),
+  ]);
+  await audit(c.env, c.get('user'), 'ocr.agent_deleted', { type: 'ocr_agent', id }, undefined, clientIp(c));
+  return c.json({ ok: true });
+});
+
+/** "Send waiting plates to Local OCR": parked (Vision cap reached), failed and not-yet-run plates. */
+admin.post('/ocr/send-to-local', requirePermission('sets.editPlate'), async (c) => {
+  const now = Date.now();
+  const { results } = await c.env.DB.prepare(
+    `UPDATE jobs SET status = 'local', agent_id = NULL, attempts = 0, last_error = NULL, next_run_at = ?1, updated_at = ?1
+     WHERE kind = 'ocr' AND status IN ('wait_quota', 'failed', 'pending') RETURNING ref_id`,
+  )
+    .bind(now)
+    .all<{ ref_id: string }>();
+  for (let i = 0; i < results.length; i += 50) {
+    const ids = results.slice(i, i + 50).map((r) => r.ref_id);
+    await c.env.DB.prepare(`UPDATE rounds SET ocr_status = 'waiting_local' WHERE id IN (${ids.map(() => '?').join(',')})`).bind(...ids).run();
+  }
+  await audit(c.env, c.get('user'), 'ocr.sent_to_local', {}, { count: results.length }, clientIp(c), now);
+  return c.json({ moved: results.length });
+});
+
+/** Read one set's plate again (target 'auto' follows the OCR mode; 'local' forces Local OCR). */
+admin.post('/sets/:id/ocr', requirePermission('sets.editPlate'), async (c) => {
+  const { target } = await readJson<{ target?: 'auto' | 'local' }>(c).catch(() => ({ target: 'auto' as const }));
+  const id = c.req.param('id');
+  const round = await loadVisibleSet(c.env, c.get('user'), id);
+  const settings = await getSettings(c.env);
+  if (settings.ocrProvider === 'none' && target !== 'local') throw badRequest('เปิดใช้การอ่านป้ายทะเบียนก่อน (หน้า อ่านป้ายทะเบียน)');
+  const wf = await getWorkflow(c.env, round.workflow_version_id);
+  const ocrSteps = (wf?.steps ?? []).filter((s) => s.ocr).map((s) => s.id);
+  if (!ocrSteps.length) throw badRequest('ขั้นตอนของชุดนี้ไม่มีขั้นตอนที่ตั้งให้อ่านป้าย');
+  const img = await c.env.DB.prepare(
+    `SELECT id FROM images WHERE round_id = ? AND active = 1 AND uploaded_at IS NOT NULL AND step_id IN (${ocrSteps.map(() => '?').join(',')}) LIMIT 1`,
+  )
+    .bind(id, ...ocrSteps)
+    .first<{ id: string }>();
+  if (!img) throw badRequest('ยังไม่มีรูปป้ายทะเบียนที่อัปโหลดเสร็จ');
+  const now = Date.now();
+  await c.env.DB.batch([
+    c.env.DB.prepare(`UPDATE jobs SET status = 'done', updated_at = ? WHERE kind = 'ocr' AND ref_id = ? AND status != 'done'`).bind(now, id),
+    c.env.DB.prepare(
+      `INSERT INTO jobs (kind, ref_id, payload, status, attempts, next_run_at, created_at, updated_at) VALUES ('ocr', ?, ?, ?, 0, ?, ?, ?)`,
+    ).bind(id, JSON.stringify({ imageId: img.id, force: true }), target === 'local' ? 'local' : 'pending', now, now, now),
+    c.env.DB.prepare(`UPDATE rounds SET ocr_status = ? WHERE id = ?`).bind(target === 'local' ? 'waiting_local' : 'pending', id),
+  ]);
+  if (target !== 'local') {
+    try {
+      c.executionCtx.waitUntil(processJobs(c.env, 3, new URL(c.req.url).origin).catch(() => undefined));
+    } catch {
+      /* tests */
+    }
+  }
+  await audit(c.env, c.get('user'), 'ocr.rerun', { type: 'set', id }, { target: target ?? 'auto' }, clientIp(c), now);
+  return c.json({ ok: true });
 });
 
 // ---------- Demo mode helpers (only when DRIVE_MODE=demo) ----------

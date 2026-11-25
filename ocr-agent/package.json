@@ -1,0 +1,19 @@
+{
+  "name": "vehicle-photos-ocr-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local OCR computer for Vehicle Photos: pulls plate photos, reads Thai plates with OpenCV + Tesseract, reports results.",
+  "type": "module",
+  "main": "agent.mjs",
+  "scripts": {
+    "start": "node agent.mjs",
+    "test-image": "node test-image.mjs"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@techstark/opencv-js": "4.10.0-release.1",
+    "@tesseract.js-data/tha": "1.0.0",
+    "sharp": "^0.34.0",
+    "tesseract.js": "^6.0.0"
+  }
+}

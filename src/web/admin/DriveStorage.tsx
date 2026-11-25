@@ -249,18 +249,8 @@ export function DriveStorage() {
               <span>ส่งออก Excel ได้สูงสุด (ชุดต่อครั้ง)</span>
               <input className="input" type="number" min={1} max={500} defaultValue={s.exportMaxSets} onBlur={(e) => void save({ exportMaxSets: Number(e.target.value) })} />
             </label>
-            {canManage && (
-              <label className="field">
-                <span>อ่านป้ายทะเบียน (OCR)</span>
-                <select className="input" value={s.ocrProvider} onChange={(e) => void save({ ocrProvider: e.target.value as AppSettings['ocrProvider'] })}>
-                  <option value="none">ปิด — ผู้ดูแลกรอกทะเบียนเอง</option>
-                  <option value="google_vision">Google Cloud Vision</option>
-                  <option value="aiforthai">AI for Thai LPR (ทดลอง)</option>
-                </select>
-              </label>
-            )}
           </div>
-          <p className="small muted">ชุดเก่าจะไม่โหลดรูปหรือภาพย่อในแดชบอร์ด แสดงเฉพาะข้อมูลและปุ่ม “เปิดชุดใน Drive”</p>
+          <p className="small muted">ชุดเก่าจะไม่โหลดรูปหรือภาพย่อในแดชบอร์ด แสดงเฉพาะข้อมูลและปุ่ม “เปิดชุดใน Drive” · ตั้งค่าการอ่านป้ายทะเบียนอยู่ที่เมนู <a href="#/ocr">อ่านป้ายทะเบียน (OCR)</a></p>
         </section>
       )}
 

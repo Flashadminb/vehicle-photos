@@ -8,6 +8,8 @@ export const testEnv = env as unknown as Env;
 export const ORIGIN = 'http://test.local';
 
 /** Minimal browser-like client: path-scoped cookies, our CSRF header, JSON helpers. */
+const pending: Promise<unknown>[] = [];
+
 export class Client {
   cookies = new Map<string, { value: string; path: string }>();
 
@@ -28,8 +30,10 @@ export class Client {
         body: body === undefined ? undefined : body instanceof ArrayBuffer ? body : JSON.stringify(body),
       }),
       testEnv,
-      { waitUntil() {}, passThroughOnException() {}, props: {} } as unknown as ExecutionContext,
+      { waitUntil: (p: Promise<unknown>) => void pending.push(p), passThroughOnException() {}, props: {} } as unknown as ExecutionContext,
     );
+    // Run background work (waitUntil) to completion so tests are deterministic.
+    await Promise.allSettled(pending.splice(0));
     for (const sc of res.headers.getSetCookie?.() ?? []) {
       const [pair, ...attrs] = sc.split(';');
       const [k, v] = pair.split('=');

@@ -1,0 +1,74 @@
+// Vehicle Photos — Local OCR computer.
+// Asks the server for plate photos, reads them here (OpenCV + Tesseract), sends back the result.
+// Run on as many computers as you like: whichever is switched on takes the next plate.
+import { readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { hostname } from 'node:os';
+import { readPlate, shutdown } from './plate.mjs';
+
+const VERSION = '1.0.0';
+const cfgFile = new URL('./config.json', import.meta.url);
+const cfg = existsSync(cfgFile) ? JSON.parse(await readFile(cfgFile, 'utf8')) : {};
+const SERVER = (process.env.VP_SERVER || cfg.server || '').replace(/\/$/, '');
+const TOKEN = process.env.VP_TOKEN || cfg.token || '';
+// Below this confidence the plate is not filled in (it stays "ไม่ระบุ" for an admin to check).
+const MIN_CONFIDENCE = Number(process.env.VP_MIN_CONFIDENCE || cfg.minConfidence || 0.6);
+
+if (!SERVER || !TOKEN) {
+  console.error('ยังไม่ได้ตั้งค่า: คัดลอก config.example.json เป็น config.json แล้วใส่ server และ token จากแดชบอร์ด');
+  process.exit(1);
+}
+
+const headers = { Authorization: `Bearer ${TOKEN}`, 'X-Agent-Version': `${VERSION} ${hostname()}`.slice(0, 40) };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const now = () => new Date().toLocaleTimeString('th-TH');
+
+async function api(method, path, body) {
+  const res = await fetch(SERVER + path, {
+    method,
+    headers: { ...headers, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 401) {
+    console.error(`[${now()}] token ไม่ถูกต้องหรือเครื่องนี้ถูกปิดใช้งานในแดชบอร์ด`);
+    process.exit(2);
+  }
+  if (!res.ok) throw new Error(`${method} ${path} → ${res.status} ${(await res.text()).slice(0, 200)}`);
+  return res;
+}
+
+let stopping = false;
+process.on('SIGINT', () => { stopping = true; console.log('\nกำลังหยุด…'); });
+
+console.log(`Local OCR v${VERSION} — เชื่อมต่อ ${SERVER}`);
+console.log('กำลังเตรียม OpenCV + Tesseract (ครั้งแรกอาจใช้เวลาสักครู่)…');
+let failures = 0;
+let announcedIdle = false;
+while (!stopping) {
+  try {
+    const { job, pollSeconds } = await (await api('POST', '/api/ocr-agent/poll', {})).json();
+    failures = 0;
+    if (!job) {
+      if (!announcedIdle) { console.log(`[${now()}] พร้อมทำงาน — รอป้ายใหม่ (ถามทุก ${pollSeconds} วินาที)`); announcedIdle = true; }
+      await sleep(pollSeconds * 1000);
+      continue;
+    }
+    announcedIdle = false;
+    try {
+      const img = Buffer.from(await (await api('GET', job.imageUrl)).arrayBuffer());
+      const r = await readPlate(img);
+      const plate = r.plate && r.confidence >= MIN_CONFIDENCE ? r.plate : null;
+      await api('POST', `/api/ocr-agent/jobs/${job.id}/result`, { text: r.text, plate, confidence: r.confidence });
+      console.log(`[${now()}] ${job.publicId ?? job.id}: ${plate ?? `ไม่แน่ใจ (${r.plate ?? 'อ่านไม่ได้'})`} · ${Math.round(r.confidence * 100)}% · ${r.timings.totalMs} ms`);
+    } catch (e) {
+      console.error(`[${now()}] อ่านป้าย ${job.publicId ?? job.id} ไม่สำเร็จ: ${e.message}`);
+      await api('POST', `/api/ocr-agent/jobs/${job.id}/result`, { error: String(e.message).slice(0, 300) }).catch(() => {});
+    }
+  } catch (e) {
+    failures++;
+    const wait = Math.min(300, 5 * 2 ** Math.min(failures, 6));
+    console.error(`[${now()}] ติดต่อเซิร์ฟเวอร์ไม่ได้ (${e.message}) — ลองใหม่ใน ${wait} วินาที`);
+    await sleep(wait * 1000);
+  }
+}
+await shutdown();

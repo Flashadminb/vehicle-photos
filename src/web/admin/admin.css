@@ -144,3 +144,13 @@
   .kv { grid-template-columns: 1fr; }
   .i18n-row { grid-template-columns: 1fr; }
 }
+
+/* OCR page */
+.mode-list { display: flex; flex-direction: column; gap: 8px; }
+.mode-item { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; cursor: pointer; background: var(--surface-2); }
+.mode-item input { margin-top: 4px; width: 18px; height: 18px; accent-color: var(--accent); }
+.mode-item > span { display: flex; flex-direction: column; gap: 2px; }
+.mode-item.is-active { border-color: var(--accent); background: var(--accent-soft); }
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.queue-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.queue-list li { display: flex; justify-content: space-between; padding: 8px 12px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); }

@@ -7,6 +7,7 @@ import { WorkflowConfig } from './WorkflowConfig';
 import { Members } from './Members';
 import { DriveStorage } from './DriveStorage';
 import { AuditLog } from './AuditLog';
+import { OcrPage } from './OcrPage';
 
 const ROLE_TH: Record<string, string> = { super_admin: 'ผู้ดูแลสูงสุด', admin: 'ผู้ดูแล', reviewer: 'ผู้ตรวจสอบ', operator: 'พนักงานภาคสนาม' };
 
@@ -15,6 +16,7 @@ const NAV = [
   { path: 'field', label: 'ตั้งค่าแอปภาคสนาม', perm: 'config.edit', icon: 'M8 3h8a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM11 18h2' },
   { path: 'workflow', label: 'ขั้นตอนการถ่ายและภาษา', perm: 'config.edit', icon: 'M5 6h4v4H5zM15 6h4v4h-4zM10 16h4v4h-4zM7 10v3h10v-3M12 13v3' },
   { path: 'members', label: 'สมาชิกและสิทธิ์', perm: 'users.manage', icon: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21a7 7 0 0 1 14 0M17 11a3 3 0 1 0 0-6M22 21a6 6 0 0 0-4-5.6' },
+  { path: 'ocr', label: 'อ่านป้ายทะเบียน (OCR)', perm: 'sets.view', icon: 'M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 9h10v6H7z' },
   { path: 'drive', label: 'Google Drive และการเก็บรักษา', perm: 'storage.view', icon: 'M8 3h8l6 10-4 7H6l-4-7zM2 13h20M8 3l8 17M16 3 8 20' },
   { path: 'audit', label: 'บันทึกการใช้งาน', perm: 'audit.view', icon: 'M6 3h9l4 4v14H6zM9 12h7M9 16h7M9 8h3' },
 ];
@@ -98,6 +100,7 @@ export function App() {
           {active?.path === 'field' && <FieldConfig />}
           {active?.path === 'workflow' && <WorkflowConfig />}
           {active?.path === 'members' && <Members />}
+          {active?.path === 'ocr' && <OcrPage />}
           {active?.path === 'drive' && <DriveStorage />}
           {active?.path === 'audit' && <AuditLog />}
         </main>

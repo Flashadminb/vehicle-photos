@@ -2,14 +2,13 @@ import type { Env } from '../env';
 import { getDrive } from '../drive';
 import { ensureReplacedFolder, syncRoundFolderName } from '../drive/folders';
 import type { DriveClient } from '../drive/types';
-import { normalizePlate, plateDigits } from '../../shared/plate';
 import { getSettings } from './config';
 import { claimDueJobs, completeJob, failJob, enqueue, type JobRow } from './jobs';
-import { recognizePlate } from './ocr';
+import { aiForThai, applyOcrResult, decideRoute, googleVision, ocrImageResponse, signedImageUrl, visionCap, visionUsage } from './ocr';
 import { evictCache, getCache } from './cache';
 import { audit } from './audit';
 
-export async function runJob(env: Env, drive: DriveClient, job: JobRow) {
+export async function runJob(env: Env, drive: DriveClient, job: JobRow, baseUrl = ''): Promise<void | 'deferred'> {
   if (job.kind === 'rename_folder') {
     await syncRoundFolderName(env, drive, job.ref_id);
     return;
@@ -34,58 +33,45 @@ export async function runJob(env: Env, drive: DriveClient, job: JobRow) {
     const settings = await getSettings(env);
     const round = await env.DB.prepare(`SELECT * FROM rounds WHERE id = ?`).bind(job.ref_id).first<any>();
     if (!round) return;
-    if (settings.ocrProvider === 'none' || round.plate_source === 'manual') {
+    const { imageId, force } = JSON.parse(job.payload ?? '{}');
+    if (settings.ocrProvider === 'none' || (round.plate_source === 'manual' && !force)) {
       await env.DB.prepare(`UPDATE rounds SET ocr_status = 'skipped' WHERE id = ?`).bind(round.id).run();
       return;
     }
-    const { imageId } = JSON.parse(job.payload ?? '{}');
     const img = await env.DB.prepare(`SELECT * FROM images WHERE id = ? AND active = 1`).bind(imageId).first<any>();
     if (!img) return; // replaced since; the replacement enqueues its own OCR job
-    // Prefer the un-watermarked original for recognition; fall back to the cached display copy.
-    let bytes: ArrayBuffer;
-    if (img.drive_file_id) bytes = await (await drive.download(img.drive_file_id)).arrayBuffer();
-    else {
-      const cached = await getCache(env, img.id, 'display');
-      bytes = cached ? await cached.arrayBuffer() : await (await drive.download(img.drive_display_file_id)).arrayBuffer();
+    const now = Date.now();
+    const route = await decideRoute(env, settings, now);
+    if (route === 'off') return;
+    if (route === 'local' || route === 'wait_quota') {
+      // Hand over to the Local OCR computers (they pull work), or park until quota is available.
+      const status = route === 'local' ? 'local' : 'wait_quota';
+      await env.DB.batch([
+        env.DB.prepare(`UPDATE jobs SET status = ?, agent_id = NULL, next_run_at = ?, updated_at = ? WHERE id = ?`).bind(status, now, now, job.id),
+        env.DB.prepare(`UPDATE rounds SET ocr_status = ? WHERE id = ?`).bind(route === 'local' ? 'waiting_local' : 'waiting_quota', round.id),
+      ]);
+      return 'deferred';
     }
     let result;
     try {
-      result = await recognizePlate(env, settings.ocrProvider, bytes);
+      if (route === 'vision') {
+        const url = await signedImageUrl(env, baseUrl || env.PUBLIC_BASE_URL || '', img.id, now);
+        result = await googleVision(env, {
+          url: url ?? undefined,
+          // Fallback: the smaller display copy keeps the base64 work light.
+          bytes: async () => {
+            const cached = await getCache(env, img.id, 'display');
+            return cached ? cached.arrayBuffer() : (await drive.download(img.drive_display_file_id)).arrayBuffer();
+          },
+        });
+      } else {
+        result = await aiForThai(env, await (await ocrImageResponse(env, drive, img)).arrayBuffer());
+      }
     } catch (e) {
       if (job.attempts >= 3) await env.DB.prepare(`UPDATE rounds SET ocr_status = 'failed' WHERE id = ?`).bind(round.id).run();
       throw e;
     }
-    const now = Date.now();
-    // Re-check: a manual correction made while OCR was running always wins.
-    const upd = await env.DB.prepare(
-      `UPDATE rounds SET plate_raw = ?, plate_confidence = ?, ocr_status = 'done',
-         plate_text = CASE WHEN plate_source = 'manual' THEN plate_text ELSE ? END,
-         plate_norm = CASE WHEN plate_source = 'manual' THEN plate_norm ELSE ? END,
-         plate_digits = CASE WHEN plate_source = 'manual' THEN plate_digits ELSE ? END,
-         plate_source = CASE WHEN plate_source = 'manual' THEN 'manual' WHEN ? IS NULL THEN 'none' ELSE 'ocr' END,
-         plate_updated_at = ?, updated_at = ?
-       WHERE id = ?`,
-    )
-      .bind(
-        result.raw,
-        result.confidence,
-        result.plate,
-        result.plate ? normalizePlate(result.plate) : null,
-        result.plate ? plateDigits(result.plate) || null : null,
-        result.plate,
-        now,
-        now,
-        round.id,
-      )
-      .run();
-    if (upd.meta.changes) {
-      await env.DB.prepare(
-        `INSERT INTO plate_history (round_id, at, actor_id, source, old_text, new_text, raw, confidence) VALUES (?, ?, NULL, 'ocr', ?, ?, ?, ?)`,
-      )
-        .bind(round.id, now, round.plate_text, result.plate, result.raw.slice(0, 500), result.confidence)
-        .run();
-      await syncRoundFolderName(env, drive, round.id);
-    }
+    await applyOcrResult(env, drive, round.id, result, route === 'vision' ? 'ocr:google_vision' : 'ocr:aiforthai', Date.now());
     return;
   }
 }
@@ -96,8 +82,8 @@ export async function processJobs(env: Env, limit = 10, baseUrl = '') {
   let done = 0;
   for (const job of jobs) {
     try {
-      await runJob(env, drive, job);
-      await completeJob(env, job.id);
+      const r = await runJob(env, drive, job, baseUrl || env.PUBLIC_BASE_URL || '');
+      if (r !== 'deferred') await completeJob(env, job.id);
       done++;
     } catch (e) {
       console.error(`Job ${job.id} (${job.kind}) failed`, e);
@@ -131,8 +117,22 @@ export async function cleanupExpired(env: Env, now = Date.now()) {
   ]);
 }
 
+/** Plates parked because Vision hit its cap go back in the queue once quota is available again (new month). */
+export async function releaseWaitingQuota(env: Env) {
+  const settings = await getSettings(env);
+  if ((await visionUsage(env)) >= visionCap(settings)) return 0;
+  const r = await env.DB.prepare(
+    `UPDATE jobs SET status = 'pending', next_run_at = ?1, updated_at = ?1
+     WHERE id IN (SELECT id FROM jobs WHERE kind = 'ocr' AND status = 'wait_quota' ORDER BY created_at LIMIT 50)`,
+  )
+    .bind(Date.now())
+    .run();
+  return r.meta.changes;
+}
+
 export async function scheduled(env: Env) {
   const settings = await getSettings(env);
+  await releaseWaitingQuota(env);
   await processJobs(env, 10);
   await evictCache(env, settings);
   await markAbandoned(env, settings.abandonAfterHours);

@@ -31,7 +31,16 @@ export interface Language {
 }
 
 export type ImageDisplayMode = 'window' | 'cache';
-export type OcrProvider = 'none' | 'google_vision' | 'aiforthai';
+/**
+ * Plate recognition mode.
+ *  - none: off (plates entered manually)
+ *  - google_vision / aiforthai: cloud only
+ *  - local: only the office computers running the Local OCR agent
+ *  - vision_then_local: Google Vision until the monthly cap, then Local OCR
+ *  - local_then_vision: Local OCR whenever a computer is online, otherwise Vision (within the cap)
+ */
+export type OcrProvider = 'none' | 'google_vision' | 'aiforthai' | 'local' | 'vision_then_local' | 'local_then_vision';
+export const OCR_PROVIDERS: OcrProvider[] = ['none', 'google_vision', 'aiforthai', 'local', 'vision_then_local', 'local_then_vision'];
 
 export interface AppSettings {
   unknownPlateLabel: string;
@@ -48,6 +57,14 @@ export interface AppSettings {
   dbThresholdPct: number;
   keepOriginals: boolean;
   ocrProvider: OcrProvider;
+  /** Google Vision free units per month (TEXT_DETECTION). */
+  visionMonthlyFree: number;
+  /** Stop using Vision at this % of the free units (default 90). */
+  visionCapPct: number;
+  /** A Local OCR computer counts as online if it polled within this many seconds. */
+  agentOnlineSeconds: number;
+  /** How often an idle Local OCR computer asks for work. */
+  agentPollSeconds: number;
   ocrBlocksDone: boolean;
   pinLockEnabled: boolean;
   pinLockMinutes: number;
@@ -69,6 +86,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   dbThresholdPct: 70,
   keepOriginals: true,
   ocrProvider: 'none',
+  visionMonthlyFree: 1000,
+  visionCapPct: 90,
+  agentOnlineSeconds: 120,
+  agentPollSeconds: 30,
   ocrBlocksDone: false,
   pinLockEnabled: false,
   pinLockMinutes: 5,

@@ -1,5 +1,5 @@
 import type { Env } from '../env';
-import { DEFAULT_SETTINGS, type AppSettings, type Language, type WorkflowStep, type WorkflowVersion } from '../../shared/types';
+import { OCR_PROVIDERS, DEFAULT_SETTINGS, type AppSettings, type Language, type WorkflowStep, type WorkflowVersion } from '../../shared/types';
 import { badRequest } from '../util';
 
 export async function getSettings(env: Env): Promise<AppSettings> {
@@ -20,6 +20,10 @@ const NUMERIC_LIMITS: Partial<Record<keyof AppSettings, [number, number]>> = {
   pinLockMinutes: [1, 240],
   abandonAfterHours: [1, 24 * 90],
   exportMaxSets: [1, 500],
+  visionMonthlyFree: [0, 100000],
+  visionCapPct: [1, 100],
+  agentOnlineSeconds: [30, 3600],
+  agentPollSeconds: [10, 600],
 };
 
 export function validateSettingsPatch(patch: Partial<AppSettings>, current: AppSettings): AppSettings {
@@ -40,7 +44,7 @@ export function validateSettingsPatch(patch: Partial<AppSettings>, current: AppS
     }
   }
   if (!['window', 'cache'].includes(next.imageDisplayMode)) throw badRequest('imageDisplayMode must be window or cache.');
-  if (!['none', 'google_vision', 'aiforthai'].includes(next.ocrProvider)) throw badRequest('Unknown OCR provider.');
+  if (!OCR_PROVIDERS.includes(next.ocrProvider)) throw badRequest('Unknown OCR provider.');
   if (next.cacheTargetPct >= next.cacheThresholdPct) throw badRequest('Cache target must be below the threshold.');
   if (!next.unknownPlateLabel) throw badRequest('The unknown-plate label cannot be empty.');
   return next;

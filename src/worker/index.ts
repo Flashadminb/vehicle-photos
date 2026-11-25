@@ -5,7 +5,9 @@ import { admin } from './routes/admin';
 import { ApiError, badRequest, errorResponse, readJson, str, uuid } from './util';
 import { createPasswordHash, validateNewPassword } from './auth/session';
 import { DemoDrive } from './drive/demo';
-import { isDemo } from './drive';
+import { isDemo, getDrive } from './drive';
+import { agent } from './routes/agent';
+import { ocrImageResponse, verifyImageSig } from './services/ocr';
 import { scheduled } from './services/maintenance';
 import { audit } from './services/audit';
 
@@ -65,6 +67,19 @@ app.put('/api/demo-drive/upload/:sessionId', async (c) => {
   return c.json(res);
 });
 
+/** Signed, short-lived link that lets Google Vision download one photo directly. */
+app.get('/api/ocr-image/:imageId', async (c) => {
+  const id = c.req.param('imageId');
+  if (!(await verifyImageSig(c.env, id, c.req.query('exp') ?? '0', c.req.query('sig') ?? ''))) {
+    throw new ApiError(403, 'forbidden', 'Invalid or expired link.');
+  }
+  const img = await c.env.DB.prepare(`SELECT * FROM images WHERE id = ?`).bind(id).first<any>();
+  if (!img) throw new ApiError(404, 'not_found', 'Not found.');
+  const res = await ocrImageResponse(c.env, getDrive(c.env, new URL(c.req.url).origin), img);
+  return new Response(res.body, { headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store' } });
+});
+
+app.route('/api/ocr-agent', agent);
 app.route('/api/field', field);
 app.route('/api/admin', admin);
 
