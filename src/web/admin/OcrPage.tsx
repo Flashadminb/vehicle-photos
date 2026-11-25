@@ -198,6 +198,14 @@ export function OcrPage() {
         <p className="small muted">
           เปิดคอมเครื่องไหนก็ได้ที่ติดตั้งโปรแกรมไว้ เครื่องจะมารับป้ายไปอ่านเอง มีกี่เครื่องก็ได้ ระบบไม่ให้สองเครื่องอ่านป้ายเดียวกัน ถ้าปิดเครื่องกลางคัน เครื่องอื่นจะรับต่อภายใน 5 นาที
         </p>
+        <div className="banner banner-ok small agent-update">
+          <span>
+            <strong>อัปเดตเครื่องเดิม</strong> (เวอร์ชันต่ำกว่า 1.4.0 ทำครั้งเดียว · 1.4.0 ขึ้นไปอัปเดตเอง): ปิดโปรแกรม → ดาวน์โหลดไฟล์นี้ → แตกไฟล์ทับโฟลเดอร์เดิม (แทนที่ทั้งหมด) → เปิด start ใหม่ ไม่ต้องใส่ token ใหม่
+          </span>
+          <a className="btn btn-sm" href="/downloads/ocr-agent.zip" download="ocr-agent-update.zip">
+            ดาวน์โหลดเวอร์ชันล่าสุด{latest ? ` (${latest})` : ''}
+          </a>
+        </div>
         <div className="table-scroll">
           <table className="table table-compact">
             <thead>
