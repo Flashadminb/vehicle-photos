@@ -390,9 +390,18 @@ function levenshtein(a, b) {
 }
 
 /** Closest of the 77 provinces, if the OCR text is reasonably close to one. */
+const PROVINCE_ALIASES = { กรุงเทพ: 'กรุงเทพมหานคร', กรุงเทพฯ: 'กรุงเทพมหานคร', กทม: 'กรุงเทพมหานคร', อยุธยา: 'พระนครศรีอยุธยา' };
+
 export function matchProvince(text) {
   const t = (text || '').replace(/[^฀-๿]/g, '');
   if (t.length < 3) return null;
+  if (PROVINCE_ALIASES[t]) return PROVINCE_ALIASES[t];
+  const bare = t.replace(/ฯ$/, '');
+  if (PROVINCE_ALIASES[bare]) return PROVINCE_ALIASES[bare];
+  if (bare.length >= 4) {
+    const starts = PROVINCES.filter((p) => p.startsWith(bare));
+    if (starts.length === 1) return starts[0];
+  }
   let best = null;
   for (const p of PROVINCES) {
     const dist = levenshtein(t, p) / Math.max(t.length, p.length);

@@ -25,6 +25,13 @@ describe('extractSlipPlate', () => {
     expect(p('ทะเบียน บร7865(เพชรบุรี)')).toBe('บร 7865'); // the word before is not part of it
   });
 
+  it('understands short province names printed on slips', () => {
+    expect(extractSlipPlate('66-0632(กรุงเทพ) 2026-11-25')).toEqual({ plate: '66-0632', province: 'กรุงเทพมหานคร' });
+    expect(extractSlipPlate('3ฒช6128(กรุงเทพ)')).toEqual({ plate: '3ฒช 6128', province: 'กรุงเทพมหานคร' });
+    expect(extractSlipPlate('69-5096(กรุงเทพฯ)')).toEqual({ plate: '69-5096', province: 'กรุงเทพมหานคร' });
+    expect(extractSlipPlate('725067723224(กทม)')).toEqual({ plate: '725067723224', province: 'กรุงเทพมหานคร' });
+  });
+
   it('search digits ignore the province', async () => {
     const { plateDigits, plateCore } = await import('../../src/shared/plate');
     expect(plateDigits('บร 7865 (เพชรบุรี)')).toBe('7865');

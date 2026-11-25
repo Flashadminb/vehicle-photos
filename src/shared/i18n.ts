@@ -62,6 +62,7 @@ export const TRANSLATION_KEYS = [
   'doc_guide',
   'slip_line_guide',
   'zoom',
+  'slip_top',
   'check_photo',
   'next_step',
   'go_to_done',
@@ -131,6 +132,7 @@ export const BUILTIN_TRANSLATIONS: Record<string, Record<TranslationKey, string>
     doc_guide: 'Fit the whole slip inside the frame, landscape',
     slip_line_guide: 'Zoom in: the plate line, e.g. บร7865(เพชรบุรี), fills the frame',
     zoom: 'Zoom',
+    slip_top: '“Proof of Van Dispatching” at the top',
   },
   th: {
     app_name: 'ถ่ายรูปรถ',
@@ -193,6 +195,7 @@ export const BUILTIN_TRANSLATIONS: Record<string, Record<TranslationKey, string>
     doc_guide: 'วางใบบาร์ทั้งใบให้เต็มกรอบ (แนวนอน)',
     slip_line_guide: 'ซูมบรรทัดทะเบียน เช่น บร7865(เพชรบุรี) ให้เต็มกรอบ',
     zoom: 'ซูม',
+    slip_top: 'หัวกระดาษ (Proof of Van Dispatching) อยู่ด้านบน',
   },
 };
 

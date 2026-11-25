@@ -119,9 +119,20 @@ function levenshtein(a: string, b: string) {
 }
 
 /** Closest of the 77 provinces if the OCR text is reasonably close to one (tolerates OCR slips). */
+/** Short forms printed on slips. */
+const PROVINCE_ALIASES: Record<string, string> = { กรุงเทพ: 'กรุงเทพมหานคร', กรุงเทพฯ: 'กรุงเทพมหานคร', กทม: 'กรุงเทพมหานคร', อยุธยา: 'พระนครศรีอยุธยา' };
+
 export function matchProvince(text: string): string | null {
   const t = (text || '').replace(/[^\u0E00-\u0E7F]/g, '');
   if (t.length < 3) return null;
+  if (PROVINCE_ALIASES[t]) return PROVINCE_ALIASES[t];
+  const bare = t.replace(/ฯ$/, '');
+  if (PROVINCE_ALIASES[bare]) return PROVINCE_ALIASES[bare];
+  // A shortened name ("กรุงเทพ", "นครศรี") that starts exactly one province.
+  if (bare.length >= 4) {
+    const starts = PROVINCES.filter((p) => p.startsWith(bare));
+    if (starts.length === 1) return starts[0];
+  }
   let best: { name: string; dist: number } | null = null;
   for (const p of PROVINCES) {
     const dist = levenshtein(t, p) / Math.max(t.length, p.length);

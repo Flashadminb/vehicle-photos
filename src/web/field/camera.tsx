@@ -160,6 +160,7 @@ export function Viewfinder({
       {guide && status === 'live' && (
         <div className={`fa-vf-guide ${guide === 'slip' ? 'is-doc' : guide === 'slip_line' ? 'is-line' : ''}`} aria-hidden>
           <span>{t(guide === 'slip' ? 'doc_guide' : guide === 'slip_line' ? 'slip_line_guide' : 'plate_guide')}</span>
+          {(guide === 'slip' || guide === 'slip_line') && <em className="fa-vf-top">▲ {t('slip_top')}</em>}
         </div>
       )}
       {camera.torch.supported && (
