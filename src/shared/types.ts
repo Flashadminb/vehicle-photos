@@ -12,6 +12,11 @@ export interface WorkflowStep {
   allowUpload: boolean;
   /** Run plate recognition on this step's image. */
   ocr: boolean;
+  /**
+   * What the photo shows: 'plate' = the licence plate itself; 'document' = a printed slip
+   * (e.g. the dispatch slip) where the plate is printed as "บร7865(เพชรบุรี)".
+   */
+  ocrKind?: 'plate' | 'document';
   /** Label per language code. */
   labels: Record<string, string>;
 }

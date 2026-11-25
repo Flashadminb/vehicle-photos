@@ -687,19 +687,23 @@ admin.post('/sets/:id/ocr', requirePermission('sets.editPlate'), async (c) => {
   const wf = await getWorkflow(c.env, round.workflow_version_id);
   const ocrSteps = (wf?.steps ?? []).filter((s) => s.ocr).map((s) => s.id);
   if (!ocrSteps.length) throw badRequest('ขั้นตอนของชุดนี้ไม่มีขั้นตอนที่ตั้งให้อ่านป้าย');
-  const img = await c.env.DB.prepare(
-    `SELECT id FROM images WHERE round_id = ? AND active = 1 AND uploaded_at IS NOT NULL AND step_id IN (${ocrSteps.map(() => '?').join(',')}) LIMIT 1`,
+  const { results: imgs } = await c.env.DB.prepare(
+    `SELECT id, step_id FROM images WHERE round_id = ? AND active = 1 AND uploaded_at IS NOT NULL AND step_id IN (${ocrSteps.map(() => '?').join(',')})`,
   )
     .bind(id, ...ocrSteps)
-    .first<{ id: string }>();
-  if (!img) throw badRequest('ยังไม่มีรูปป้ายทะเบียนที่อัปโหลดเสร็จ');
+    .all<{ id: string; step_id: string }>();
+  if (!imgs.length) throw badRequest('ยังไม่มีรูปที่อ่านป้ายได้ (ใบบาร์รถ/ป้ายทะเบียน) ที่อัปโหลดเสร็จ');
   const now = Date.now();
+  const kindOf = (stepId: string) => wf?.steps.find((s) => s.id === stepId)?.ocrKind ?? 'plate';
   await c.env.DB.batch([
     c.env.DB.prepare(`UPDATE jobs SET status = 'done', updated_at = ? WHERE kind = 'ocr' AND ref_id = ? AND status != 'done'`).bind(now, id),
-    c.env.DB.prepare(
-      `INSERT INTO jobs (kind, ref_id, payload, status, attempts, next_run_at, created_at, updated_at) VALUES ('ocr', ?, ?, ?, 0, ?, ?, ?)`,
-    ).bind(id, JSON.stringify({ imageId: img.id, force: true }), target === 'local' ? 'local' : 'pending', now, now, now),
-    c.env.DB.prepare(`UPDATE rounds SET ocr_status = ? WHERE id = ?`).bind(target === 'local' ? 'waiting_local' : 'pending', id),
+    // Re-reading starts fresh: the previous automatic score no longer blocks a new result.
+    c.env.DB.prepare(`UPDATE rounds SET plate_ocr_score = NULL, ocr_status = ? WHERE id = ?`).bind(target === 'local' ? 'waiting_local' : 'pending', id),
+    ...imgs.map((img) =>
+      c.env.DB.prepare(
+        `INSERT INTO jobs (kind, ref_id, payload, status, attempts, next_run_at, created_at, updated_at) VALUES ('ocr', ?, ?, ?, 0, ?, ?, ?)`,
+      ).bind(id, JSON.stringify({ imageId: img.id, force: true, kind: kindOf(img.step_id) }), target === 'local' ? 'local' : 'pending', now, now, now),
+    ),
   ]);
   if (target !== 'local') {
     try {

@@ -31,10 +31,13 @@ const MODES: { value: OcrProvider; title: string; desc: string }[] = [
 
 /** "ocr:local:PC-ออฟฟิศ" → "Local OCR · PC-ออฟฟิศ" */
 export function ocrSourceLabel(source: string): string {
-  if (source === 'ocr:google_vision') return 'Google Vision';
-  if (source === 'ocr:aiforthai') return 'AI for Thai';
-  if (source.startsWith('ocr:local:')) return `Local OCR · ${source.slice(10)}`;
-  if (source === 'ocr') return 'OCR';
+  const slip = source.endsWith(':slip');
+  const s = slip ? source.slice(0, -5) : source;
+  const tail = slip ? ' (ใบบาร์รถ)' : '';
+  if (s === 'ocr:google_vision') return 'Google Vision' + tail;
+  if (s === 'ocr:aiforthai') return 'AI for Thai' + tail;
+  if (s.startsWith('ocr:local:')) return `Local OCR · ${s.slice(10)}${tail}`;
+  if (s === 'ocr') return 'OCR';
   return source;
 }
 

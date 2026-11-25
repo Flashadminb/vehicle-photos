@@ -114,8 +114,17 @@ export function WorkflowConfig() {
                       <input type="checkbox" checked={s.allowUpload} onChange={(e) => update(i, { allowUpload: e.target.checked })} /> อนุญาตให้อัปโหลดไฟล์
                     </label>
                     <label className="checkbox">
-                      <input type="checkbox" checked={s.ocr} onChange={(e) => update(i, { ocr: e.target.checked })} /> อ่านป้ายทะเบียน (OCR)
+                      <input type="checkbox" checked={s.ocr} onChange={(e) => update(i, { ocr: e.target.checked, ocrKind: s.ocrKind ?? 'plate' })} /> อ่านป้ายทะเบียน (OCR)
                     </label>
+                    {s.ocr && (
+                      <label className="field-inline small">
+                        รูปนี้คือ
+                        <select className="input input-sm" value={s.ocrKind ?? 'plate'} onChange={(e) => update(i, { ocrKind: e.target.value as 'plate' | 'document' })}>
+                          <option value="plate">ป้ายทะเบียนรถ</option>
+                          <option value="document">เอกสาร/ใบบาร์รถ ที่พิมพ์ทะเบียน เช่น บร7865(เพชรบุรี)</option>
+                        </select>
+                      </label>
+                    )}
                   </div>
                 </li>
               ))}

@@ -4,9 +4,11 @@
 // Name files with the true plate (e.g. "กข1234.jpg") to get an accuracy score.
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
-import { readPlate, shutdown } from './plate.mjs';
+import { readDocument, readPlate, shutdown } from './plate.mjs';
 
-const args = process.argv.slice(2);
+// --doc: the photos are printed slips (ใบบาร์รถ) instead of licence plates.
+const docMode = process.argv.includes('--doc');
+const args = process.argv.slice(2).filter((a) => a !== '--doc');
 if (!args.length) {
   console.log('วิธีใช้: node test-image.mjs <รูป.jpg | โฟลเดอร์>');
   process.exit(1);
@@ -20,7 +22,7 @@ for (const a of args) {
 const norm = (s) => (s || '').replace(/[\s-]/g, '');
 let scored = 0, correct = 0;
 for (const f of files) {
-  const r = await readPlate(await readFile(f), { debugDir: files.length === 1 ? 'debug' : undefined });
+  const r = await (docMode ? readDocument : readPlate)(await readFile(f), { debugDir: files.length === 1 ? 'debug' : undefined });
   const expected = basename(f, extname(f)).split(/[_ ]/)[0];
   const hasLabel = (/[ก-ฮ]/.test(expected) && /\d/.test(expected)) || /^\d{2}-?\d{4}$/.test(expected);
   let mark = '';

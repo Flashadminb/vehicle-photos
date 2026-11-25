@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { Env } from '../env';
 import { ApiError, clientIp, notFound, readJson, sha256Hex } from '../util';
 import { getSettings } from '../services/config';
-import { applyOcrResult, ocrImageResponse, resultFromText } from '../services/ocr';
+import { applyOcrResult, ocrImageResponse, resultFromText, SKIP_PLATE_SCORE } from '../services/ocr';
 import { getDrive } from '../drive';
 
 /**
@@ -43,20 +43,32 @@ agent.post('/poll', async (c) => {
   const settings = await getSettings(c.env);
   const now = Date.now();
   const a = c.get('agent');
-  const job = await c.env.DB.prepare(
-    `UPDATE jobs SET status = 'local_running', agent_id = ?1, next_run_at = ?2 + ?3, attempts = attempts + 1, updated_at = ?2
-     WHERE id = (SELECT id FROM jobs WHERE kind = 'ocr'
-                   AND (status = 'local' OR (status = 'local_running' AND next_run_at < ?2))
-                 ORDER BY created_at LIMIT 1)
-     RETURNING id, ref_id, payload, attempts`,
-  )
-    .bind(a.id, now, LEASE_MS)
-    .first<any>();
+  const claim = () =>
+    c.env.DB.prepare(
+      `UPDATE jobs SET status = 'local_running', agent_id = ?1, next_run_at = ?2 + ?3, attempts = attempts + 1, updated_at = ?2
+       WHERE id = (SELECT id FROM jobs WHERE kind = 'ocr'
+                     AND (status = 'local' OR (status = 'local_running' AND next_run_at < ?2))
+                   ORDER BY created_at LIMIT 1)
+       RETURNING id, ref_id, payload, attempts`,
+    )
+      .bind(a.id, now, LEASE_MS)
+      .first<any>();
+  let job = await claim();
+  // Skip plate photos of sets whose dispatch slip was already read confidently.
+  for (let i = 0; job && i < 5; i++) {
+    const p = JSON.parse(job.payload ?? '{}');
+    if ((p.kind ?? 'plate') !== 'plate' || p.force) break;
+    const r = await c.env.DB.prepare(`SELECT plate_source, plate_ocr_score FROM rounds WHERE id = ?`).bind(job.ref_id).first<any>();
+    if (!(r?.plate_source === 'ocr' && (r.plate_ocr_score ?? 0) >= SKIP_PLATE_SCORE)) break;
+    await c.env.DB.prepare(`UPDATE jobs SET status = 'done', agent_id = NULL, updated_at = ? WHERE id = ?`).bind(now, job.id).run();
+    job = await claim();
+  }
   const pollSeconds = settings.agentPollSeconds;
   if (!job) return c.json({ job: null, pollSeconds });
+  const kind = JSON.parse(job.payload ?? '{}').kind ?? 'plate';
   const round = await c.env.DB.prepare(`SELECT public_id FROM rounds WHERE id = ?`).bind(job.ref_id).first<any>();
   return c.json({
-    job: { id: job.id, publicId: round?.public_id ?? null, imageUrl: `/api/ocr-agent/jobs/${job.id}/image`, attempt: job.attempts },
+    job: { id: job.id, publicId: round?.public_id ?? null, imageUrl: `/api/ocr-agent/jobs/${job.id}/image`, attempt: job.attempts, kind },
     pollSeconds,
   });
 });
@@ -101,11 +113,12 @@ agent.post('/jobs/:id/result', async (c) => {
     return c.json({ ok: true, retry: !dead });
   }
   const raw = String(body.text ?? '').slice(0, 2000);
-  const parsed = resultFromText(raw, typeof body.confidence === 'number' ? Math.max(0, Math.min(1, body.confidence)) : null);
+  const kind = (JSON.parse(job.payload ?? '{}').kind ?? 'plate') as 'plate' | 'document';
+  const parsed = resultFromText(raw, typeof body.confidence === 'number' ? Math.max(0, Math.min(1, body.confidence)) : null, kind);
   // Prefer the agent's own plate parse when it matches the Thai plate pattern.
   const agentPlate = body.plate ? resultFromText(String(body.plate), null).plate : null;
   const result = { ...parsed, plate: agentPlate ?? parsed.plate };
-  await applyOcrResult(c.env, getDrive(c.env, new URL(c.req.url).origin), job.ref_id, result, `ocr:local:${a.name}`.slice(0, 60), now);
+  await applyOcrResult(c.env, getDrive(c.env, new URL(c.req.url).origin), job.ref_id, result, `ocr:local:${a.name}${kind === 'document' ? ':slip' : ''}`.slice(0, 60), now, kind);
   await c.env.DB.batch([
     c.env.DB.prepare(`UPDATE jobs SET status = 'done', updated_at = ? WHERE id = ?`).bind(now, job.id),
     c.env.DB.prepare(`UPDATE ocr_agents SET jobs_done = jobs_done + 1 WHERE id = ?`).bind(a.id),

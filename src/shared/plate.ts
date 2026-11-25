@@ -51,3 +51,21 @@ export function extractThaiPlate(raw: string | null | undefined): string | null 
   const num = /(?:^|\D)(\d{2})\s*-\s*(\d{4})(?!\d)/.exec(text);
   return num ? `${num[1]}-${num[2]}` : null;
 }
+
+/**
+ * Printed slips (e.g. the dispatch slip) show the plate as "บร7865(เพชรบุรี)": letters,
+ * digits and the province in brackets. That structure is very specific, so only this
+ * pattern is accepted from a document (dates, barcodes and IDs on the slip are ignored).
+ */
+export function extractSlipPlate(raw: string | null | undefined): { plate: string; province: string } | null {
+  if (!raw) return null;
+  const text = raw.normalize('NFC').replace(/\s+/g, ' ');
+  const re = /(?:^|[^0-9ก-ฮ])([0-9]?[ก-ฮ]{1,3})\s*-?\s*(\d{1,4})\s*[(（]\s*([\u0E00-\u0E7F\s]{3,30}?)\s*[)）]/g;
+  for (const m of text.matchAll(re)) {
+    const province = m[3].replace(/\s/g, '');
+    if (province.length >= 3) return { plate: `${m[1].replace(/\s/g, '')} ${m[2]}`, province };
+  }
+  // Truck format on a slip: "70-1234(ชลบุรี)".
+  const t = /(?:^|\D)(\d{2})\s*-\s*(\d{4})\s*[(（]\s*([\u0E00-\u0E7F\s]{3,30}?)\s*[)）]/.exec(text);
+  return t ? { plate: `${t[1]}-${t[2]}`, province: t[3].replace(/\s/g, '') } : null;
+}

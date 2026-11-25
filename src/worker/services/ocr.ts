@@ -1,6 +1,6 @@
 import type { Env } from '../env';
 import type { AppSettings } from '../../shared/types';
-import { extractThaiPlate, normalizePlate, plateDigits } from '../../shared/plate';
+import { extractSlipPlate, extractThaiPlate, normalizePlate, plateDigits } from '../../shared/plate';
 import { b64, fromB64 } from '../util';
 import type { DriveClient } from '../drive/types';
 import { syncRoundFolderName } from '../drive/folders';
@@ -22,7 +22,7 @@ export interface OcrResult {
  */
 
 // ---------- test hook ----------
-type VisionFn = (env: Env, src: { url?: string; bytes?: () => Promise<ArrayBuffer> }) => Promise<OcrResult>;
+type VisionFn = (env: Env, src: { url?: string; bytes?: () => Promise<ArrayBuffer> }, kind?: OcrKind) => Promise<OcrResult>;
 let visionOverride: VisionFn | null = null;
 export function setVisionOverride(fn: VisionFn | null) {
   visionOverride = fn;
@@ -37,9 +37,27 @@ export function stripWatermarkLines(text: string): string {
     .join('\n');
 }
 
-export function resultFromText(raw: string, confidence: number | null): OcrResult {
+export type OcrKind = 'plate' | 'document';
+
+export function resultFromText(raw: string, confidence: number | null, kind: OcrKind = 'plate'): OcrResult {
+  if (kind === 'document') {
+    // Only the "บร7865(เพชรบุรี)" pattern counts on a slip; other text (dates, IDs) is ignored.
+    const slip = extractSlipPlate(stripWatermarkLines(raw));
+    return { raw: raw.slice(0, 2000), plate: slip?.plate ?? null, confidence: slip ? (confidence ?? 0.85) : confidence };
+  }
   return { raw: raw.slice(0, 2000), plate: extractThaiPlate(stripWatermarkLines(raw)), confidence };
 }
+
+/**
+ * Score used to decide whether a new automatic reading may replace the current one.
+ * Printed slips get a bonus over plate photos (clean print, province cross-check).
+ */
+export function ocrScore(confidence: number | null, kind: OcrKind) {
+  return (confidence ?? 0.5) + (kind === 'document' ? 0.15 : 0);
+}
+
+/** A plate photo is not read again when a slip reading this good already exists. */
+export const SKIP_PLATE_SCORE = 0.85;
 
 // ---------- Vision usage cap ----------
 export function visionPeriod(now: number) {
@@ -143,8 +161,8 @@ export async function ocrImageResponse(env: Env, drive: DriveClient, img: any): 
 }
 
 // ---------- providers ----------
-export async function googleVision(env: Env, src: { url?: string; bytes?: () => Promise<ArrayBuffer> }): Promise<OcrResult> {
-  if (visionOverride) return visionOverride(env, src);
+export async function googleVision(env: Env, kind: OcrKind, src: { url?: string; bytes?: () => Promise<ArrayBuffer> }): Promise<OcrResult> {
+  if (visionOverride) return visionOverride(env, src, kind);
   if (!env.GOOGLE_VISION_API_KEY) throw new Error('GOOGLE_VISION_API_KEY is not configured.');
   const call = async (image: Record<string, unknown>) => {
     const res = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${encodeURIComponent(env.GOOGLE_VISION_API_KEY!)}`, {
@@ -166,7 +184,8 @@ export async function googleVision(env: Env, src: { url?: string; bytes?: () => 
   }
   const text: string = body.responses?.[0]?.fullTextAnnotation?.text ?? body.responses?.[0]?.textAnnotations?.[0]?.description ?? '';
   const conf = body.responses?.[0]?.fullTextAnnotation?.pages?.[0]?.confidence;
-  return resultFromText(text, typeof conf === 'number' ? conf : null);
+  // Vision handles rotated documents itself (fullTextAnnotation follows the text orientation).
+  return resultFromText(text, typeof conf === 'number' ? conf : null, kind);
 }
 
 export async function aiForThai(env: Env, image: ArrayBuffer): Promise<OcrResult> {
@@ -198,25 +217,44 @@ export async function aiForThai(env: Env, image: ArrayBuffer): Promise<OcrResult
  * Store an OCR result on the round (unless an admin already corrected the plate by hand),
  * record it in the plate history, and rename the Drive folder (same folder ID).
  */
-export async function applyOcrResult(env: Env, drive: DriveClient, roundId: string, result: OcrResult, source: string, now = Date.now()) {
-  const round = await env.DB.prepare(`SELECT plate_text FROM rounds WHERE id = ?`).bind(roundId).first<any>();
+export async function applyOcrResult(
+  env: Env,
+  drive: DriveClient,
+  roundId: string,
+  result: OcrResult,
+  source: string,
+  now = Date.now(),
+  kind: OcrKind = 'plate',
+) {
+  const round = await env.DB.prepare(`SELECT plate_text, plate_norm, plate_source, plate_ocr_score FROM rounds WHERE id = ?`).bind(roundId).first<any>();
   if (!round) return;
   const plate = result.plate ? result.plate.normalize('NFC').replace(/\s+/g, ' ').trim().slice(0, 30) : null;
-  await env.DB.prepare(
-    `UPDATE rounds SET plate_raw = ?, plate_confidence = ?, ocr_status = 'done',
-       plate_text = CASE WHEN plate_source = 'manual' THEN plate_text ELSE ? END,
-       plate_norm = CASE WHEN plate_source = 'manual' THEN plate_norm ELSE ? END,
-       plate_digits = CASE WHEN plate_source = 'manual' THEN plate_digits ELSE ? END,
-       plate_source = CASE WHEN plate_source = 'manual' THEN 'manual' WHEN ? IS NULL THEN 'none' ELSE 'ocr' END,
-       plate_updated_at = ?, updated_at = ?
-     WHERE id = ?`,
-  )
-    .bind(result.raw, result.confidence, plate, plate ? normalizePlate(plate) : null, plate ? plateDigits(plate) || null : null, plate, now, now, roundId)
-    .run();
+  let score = ocrScore(result.confidence, kind);
+  // Two readings (slip + plate photo) that agree reinforce each other.
+  if (plate && round.plate_source === 'ocr' && round.plate_norm === normalizePlate(plate)) score = Math.max(score, round.plate_ocr_score ?? 0) + 0.05;
+  // Replace the plate only if: not corrected by hand, this reading found a plate, and it is
+  // at least as trustworthy as the current automatic one. A failed reading never erases a good one.
+  const replace = !!plate && round.plate_source !== 'manual' && (round.plate_source !== 'ocr' || score >= (round.plate_ocr_score ?? 0));
+  if (replace) {
+    await env.DB.prepare(
+      `UPDATE rounds SET plate_raw = ?, plate_confidence = ?, plate_ocr_score = ?, ocr_status = 'done',
+         plate_text = ?, plate_norm = ?, plate_digits = ?, plate_source = 'ocr', plate_updated_at = ?, updated_at = ?
+       WHERE id = ? AND plate_source != 'manual'`,
+    )
+      .bind(result.raw, result.confidence, score, plate, normalizePlate(plate), plateDigits(plate) || null, now, now, roundId)
+      .run();
+  } else {
+    await env.DB.prepare(
+      `UPDATE rounds SET ocr_status = CASE WHEN plate_source = 'none' THEN 'done' ELSE ocr_status END,
+         plate_raw = CASE WHEN plate_source = 'none' THEN ? ELSE plate_raw END, updated_at = ? WHERE id = ?`,
+    )
+      .bind(result.raw, now, roundId)
+      .run();
+  }
   await env.DB.prepare(
     `INSERT INTO plate_history (round_id, at, actor_id, source, old_text, new_text, raw, confidence) VALUES (?, ?, NULL, ?, ?, ?, ?, ?)`,
   )
     .bind(roundId, now, source.slice(0, 60), round.plate_text, plate, result.raw.slice(0, 500), result.confidence)
     .run();
-  await syncRoundFolderName(env, drive, roundId);
+  if (replace) await syncRoundFolderName(env, drive, roundId);
 }

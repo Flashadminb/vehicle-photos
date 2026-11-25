@@ -5,7 +5,7 @@ import { ensureDateFolder, ensureReplacedFolder, syncRoundFolderName } from '../
 import type { DriveClient } from '../drive/types';
 import { getSettings } from './config';
 import { claimDueJobs, completeJob, failJob, enqueue, type JobRow } from './jobs';
-import { aiForThai, applyOcrResult, decideRoute, googleVision, ocrImageResponse, signedImageUrl, visionCap, visionUsage } from './ocr';
+import { aiForThai, applyOcrResult, decideRoute, googleVision, ocrImageResponse, resultFromText, signedImageUrl, SKIP_PLATE_SCORE, visionCap, visionUsage, type OcrKind } from './ocr';
 import { evictCache, getCache } from './cache';
 import { audit } from './audit';
 
@@ -34,13 +34,15 @@ export async function runJob(env: Env, drive: DriveClient, job: JobRow, baseUrl 
     const settings = await getSettings(env);
     const round = await env.DB.prepare(`SELECT * FROM rounds WHERE id = ?`).bind(job.ref_id).first<any>();
     if (!round) return;
-    const { imageId, force } = JSON.parse(job.payload ?? '{}');
+    const { imageId, force, kind = 'plate' } = JSON.parse(job.payload ?? '{}') as { imageId: string; force?: boolean; kind?: OcrKind };
     if (settings.ocrProvider === 'none' || (round.plate_source === 'manual' && !force)) {
       await env.DB.prepare(`UPDATE rounds SET ocr_status = 'skipped' WHERE id = ?`).bind(round.id).run();
       return;
     }
     const img = await env.DB.prepare(`SELECT * FROM images WHERE id = ? AND active = 1`).bind(imageId).first<any>();
     if (!img) return; // replaced since; the replacement enqueues its own OCR job
+    // The slip was already read confidently: no need to spend a Vision call on the plate photo.
+    if (kind === 'plate' && !force && round.plate_source === 'ocr' && (round.plate_ocr_score ?? 0) >= SKIP_PLATE_SCORE) return;
     const now = Date.now();
     const route = await decideRoute(env, settings, now);
     if (route === 'off') return;
@@ -57,7 +59,7 @@ export async function runJob(env: Env, drive: DriveClient, job: JobRow, baseUrl 
     try {
       if (route === 'vision') {
         const url = await signedImageUrl(env, baseUrl || env.PUBLIC_BASE_URL || '', img.id, now);
-        result = await googleVision(env, {
+        result = await googleVision(env, kind, {
           url: url ?? undefined,
           // Fallback: the smaller display copy keeps the base64 work light.
           bytes: async () => {
@@ -67,12 +69,13 @@ export async function runJob(env: Env, drive: DriveClient, job: JobRow, baseUrl 
         });
       } else {
         result = await aiForThai(env, await (await ocrImageResponse(env, drive, img)).arrayBuffer());
+        if (kind === 'document') result = resultFromText(result.raw, result.confidence, 'document');
       }
     } catch (e) {
       if (job.attempts >= 3) await env.DB.prepare(`UPDATE rounds SET ocr_status = 'failed' WHERE id = ?`).bind(round.id).run();
       throw e;
     }
-    await applyOcrResult(env, drive, round.id, result, route === 'vision' ? 'ocr:google_vision' : 'ocr:aiforthai', Date.now());
+    await applyOcrResult(env, drive, round.id, result, `${route === 'vision' ? 'ocr:google_vision' : 'ocr:aiforthai'}${kind === 'document' ? ':slip' : ''}`, Date.now(), kind);
     return;
   }
 }

@@ -100,7 +100,7 @@ export function validateSteps(steps: unknown, languages: string[]): WorkflowStep
       if (typeof label === 'string' && label.trim()) labels[lang] = label.trim().slice(0, 60);
     }
     if (!languages.some((l) => labels[l])) throw badRequest(`Step ${id} needs a label.`);
-    out.push({ id, required: Boolean(raw.required), allowUpload: Boolean(raw.allowUpload), ocr: Boolean(raw.ocr), labels });
+    out.push({ id, required: Boolean(raw.required), allowUpload: Boolean(raw.allowUpload), ocr: Boolean(raw.ocr), ocrKind: raw.ocrKind === 'document' ? 'document' : 'plate', labels });
   }
   if (!out.some((s) => s.required)) throw badRequest('At least one step must be required.');
   return out;

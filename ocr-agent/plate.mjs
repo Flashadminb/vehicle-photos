@@ -516,6 +516,59 @@ export async function readPlate(buffer, { debugDir } = {}) {
   };
 }
 
+/** "บร7865(เพชรบุรี)" → { plate: 'บร 7865', province } — the pattern printed on dispatch slips. */
+export function parseSlip(text) {
+  const t = (text || '').normalize('NFC').replace(/\s+/g, ' ');
+  const re = /(?:^|[^0-9ก-ฮ])([0-9]?[ก-ฮ]{1,3})\s*-?\s*(\d{1,4})\s*[(（]\s*([\u0E00-\u0E7F\s]{3,30}?)\s*[)）]/g;
+  for (const m of t.matchAll(re)) {
+    const province = matchProvince(m[3]);
+    return { plate: `${m[1].replace(/\s/g, '')} ${m[2]}`, province, provinceText: m[3].replace(/\s/g, '') };
+  }
+  const n = /(?:^|\D)(\d{2})\s*-\s*(\d{4})\s*[(（]\s*([\u0E00-\u0E7F\s]{3,30}?)\s*[)）]/.exec(t);
+  return n ? { plate: `${n[1]}-${n[2]}`, province: matchProvince(n[3]), provinceText: n[3].replace(/\s/g, '') } : null;
+}
+
+/**
+ * Read the plate printed on a document such as the dispatch slip ("ใบบาร์รถ"). The photo
+ * may be taken sideways, so each rotation is tried until the "plate(province)" pattern is
+ * found. A province that matches one of the 77 provinces makes the reading trustworthy.
+ */
+export async function readDocument(buffer, { debugDir } = {}) {
+  const t0 = Date.now();
+  const worker = await getWorker();
+  const base = await sharp(buffer).rotate().toBuffer(); // apply EXIF orientation first
+  const attempts = [
+    [0, PSM.AUTO], [270, PSM.AUTO], [90, PSM.AUTO], [180, PSM.AUTO],
+    [270, PSM.SPARSE_TEXT], [90, PSM.SPARSE_TEXT],
+  ];
+  let lastText = '';
+  for (const [rot, psm] of attempts) {
+    const img = await sharp(base).rotate(rot).resize({ width: 1800, height: 1800, fit: 'inside' }).grayscale().normalize().png().toBuffer();
+    if (debugDir) {
+      const fs = await import('node:fs/promises');
+      await fs.mkdir(debugDir, { recursive: true });
+      await fs.writeFile(join(debugDir, `doc-${rot}-${psm}.png`), img);
+    }
+    await worker.setParameters({ tessedit_pageseg_mode: psm, tessedit_char_whitelist: '', user_defined_dpi: '300' });
+    const { data } = await worker.recognize(img);
+    lastText = data.text;
+    const slip = parseSlip(data.text);
+    if (slip) {
+      const line = data.text.split('\n').find((l) => l.includes('(') || l.includes('（')) ?? '';
+      return {
+        plate: slip.plate,
+        province: slip.province,
+        // Structure + a real province name is strong evidence; without it, stay below the cut-off.
+        confidence: slip.province ? 0.9 : 0.6,
+        text: `${line.trim()}${slip.province ? `\n[จังหวัด] ${slip.province}` : ''}`.slice(0, 1500),
+        plateFound: true,
+        timings: { totalMs: Date.now() - t0, rotation: rot },
+      };
+    }
+  }
+  return { plate: null, province: null, confidence: 0, text: lastText.replace(/\s+/g, ' ').slice(0, 500), plateFound: false, timings: { totalMs: Date.now() - t0 } };
+}
+
 export async function shutdown() {
   if (workerPromise) await (await workerPromise).terminate();
   if (digitWorkerPromise) await (await digitWorkerPromise).terminate();

@@ -277,7 +277,7 @@ export async function completeImage(
     await enqueueStmt(env, 'move_replaced', imageId, null, now).run();
   } else if (step?.ocr && settings.ocrProvider !== 'none' && round.plate_source !== 'manual') {
     await env.DB.batch([
-      enqueueStmt(env, 'ocr', round.id, { imageId }, now),
+      enqueueStmt(env, 'ocr', round.id, { imageId, kind: step.ocrKind ?? 'plate' }, now),
       env.DB.prepare(`UPDATE rounds SET ocr_status = 'pending' WHERE id = ?`).bind(round.id),
     ]);
   }
