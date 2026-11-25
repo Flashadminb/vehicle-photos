@@ -164,3 +164,5 @@
 .cleanup .banner p { margin: 0; }
 .dot-online { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #3c8655; margin-right: 4px; vertical-align: 1px; }
 .agent-update { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin: 8px 0 12px; }
+.bulk-delete { display: flex; flex-direction: column; gap: 12px; }
+.bulk-delete p { margin: 0; }

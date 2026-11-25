@@ -105,4 +105,23 @@ describe('free up Drive space (trash only, recoverable)', () => {
     expect(u.body.limit).toBeGreaterThan(0);
     expect(u.body.usage).toBeGreaterThan(0);
   });
+
+  it('bulk delete: removes from history; Drive photos go to the trash only when chosen by a Super Admin', async () => {
+    const a = await insertRound('2026-02-01');
+    const b = await insertRound('2026-02-02');
+    const open = await insertRound('2026-02-03', 'open');
+    // Admin: history only; asking for Drive is refused.
+    expect((await admin.json('POST', '/api/admin/sets/bulk-remove', { ids: [a.id], trashDrive: true })).status).toBe(403);
+    const r1 = await admin.json('POST', '/api/admin/sets/bulk-remove', { ids: [a.id] });
+    expect(r1.body.removed).toBe(1);
+    expect(await trashed(a.folderId)).toBe(0); // Drive untouched
+    // Super Admin with Drive: finished set trashed, open set removed from history but its photos untouched.
+    const r2 = await su.json('POST', '/api/admin/sets/bulk-remove', { ids: [b.id, open.id], trashDrive: true });
+    expect(r2.body).toMatchObject({ removed: 2, trashQueued: 1, skippedOpen: 1 });
+    await processJobs(testEnv, 50);
+    expect(await trashed(b.folderId)).toBe(1);
+    expect(await trashed(open.folderId)).toBe(0);
+    const row = await testEnv.DB.prepare(`SELECT removed_at FROM rounds WHERE id = ?`).bind(open.id).first<any>();
+    expect(row.removed_at).toBeTruthy();
+  });
 });

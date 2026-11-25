@@ -119,7 +119,7 @@ function DriveSpace({ connected }: { connected: boolean }) {
                     setBusy(true);
                     try {
                       const r = await api('POST', '/api/admin/drive/cleanup', { days, confirm: confirmText.trim() });
-                      setDone(`กำลังย้าย ${r.queued} ชุดไปถังขยะ Drive (ทำในเบื้องหลัง: ทันที 25 ชุด แล้วต่ออีกราว 10 ชุดทุก 15 นาที)`);
+                      setDone(`กำลังย้าย ${r.queued} ชุดไปถังขยะ Drive (ทำในเบื้องหลัง: ทันที 8 ชุด แล้วต่ออีกราว 10 ชุดทุก 15 นาที)`);
                       setPreview(null);
                       setConfirmText('');
                       void loadUsage();

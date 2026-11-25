@@ -33,7 +33,7 @@ import { changeVisibility, loadVisibleSet, setDetails, updatePlate, type SetActi
 import { cacheUsage, evictCache, getCache, type CacheKind } from '../services/cache';
 import { audit } from '../services/audit';
 import { processJobs } from '../services/maintenance';
-import { cleanupOlderThan, cleanupPreview, driveUsage, restoreRound, trashRound } from '../services/drivetrash';
+import { cleanupOlderThan, cleanupPreview, driveUsage, restoreRound, trashRound, trashSelected } from '../services/drivetrash';
 import { onlineWindowMs, visionCap, visionPeriod, visionUsage } from '../services/ocr';
 import { getDrive, isDemo, effectiveRoot } from '../drive';
 import { buildAuthUrl, clearToken, exchangeCode, loadToken, oauthRedirectUri, saveToken } from '../drive/google';
@@ -154,6 +154,46 @@ admin.get('/sets/:id', requirePermission('sets.view'), async (c) => {
 
 // (Registered before the :action route, whose pattern would also match "drive-restore".)
 // ---------- Free up Drive space (Super Admin; Drive trash only, recoverable) ----------
+/**
+ * Bulk delete from History: removes the chosen sets from the history (soft, restorable by a
+ * Super Admin). With trashDrive (Super Admin only) their Drive folders also go to the Drive
+ * trash (recoverable 30 days); sets still being captured are never touched.
+ */
+admin.post('/sets/bulk-remove', requirePermission('sets.remove'), async (c) => {
+  const { ids, trashDrive } = await readJson<{ ids: string[]; trashDrive?: boolean }>(c);
+  if (!Array.isArray(ids) || !ids.length) throw badRequest('กรุณาเลือกอย่างน้อย 1 ชุด');
+  if (ids.length > 500) throw badRequest('ลบได้ครั้งละไม่เกิน 500 ชุด');
+  const user = c.get('user');
+  if (trashDrive && !can(user.role, 'drive.trash')) throw forbidden('เฉพาะผู้ดูแลสูงสุดที่ลบรูปใน Drive ได้');
+  const unique = [...new Set(ids.map(String))];
+  const now = Date.now();
+  // Few queries regardless of count (D1 per-request query limit): one read, chunked updates, one audit row.
+  const visible: { id: string; public_id: string }[] = [];
+  for (let i = 0; i < unique.length; i += 90) {
+    const chunk = unique.slice(i, i + 90);
+    const { results } = await c.env.DB.prepare(
+      `SELECT id, public_id, hidden_at FROM rounds WHERE removed_at IS NULL AND id IN (${chunk.map(() => '?').join(',')})`,
+    )
+      .bind(...chunk)
+      .all<{ id: string; public_id: string; hidden_at: number | null }>();
+    visible.push(...results.filter((r) => !r.hidden_at || can(user.role, 'sets.viewHidden')));
+  }
+  for (let i = 0; i < visible.length; i += 90) {
+    const chunk = visible.slice(i, i + 90).map((r) => r.id);
+    await c.env.DB.prepare(`UPDATE rounds SET removed_at = ?, removed_by = ?, updated_at = ? WHERE id IN (${chunk.map(() => '?').join(',')})`)
+      .bind(now, user.id, now, ...chunk)
+      .run();
+  }
+  const removed = visible.length;
+  if (removed) await audit(c.env, user, 'sets.bulk_remove', {}, { count: removed, trashDrive: !!trashDrive, publicIds: visible.map((r) => r.public_id).slice(0, 500) }, clientIp(c), now);
+  let trash = { queued: 0, skippedOpen: 0 };
+  if (trashDrive) {
+    trash = await trashSelected(c.env, user, unique, clientIp(c));
+    if (trash.queued) c.executionCtx.waitUntil(processJobs(c.env, 8, baseUrl(c.req.url)).catch(() => undefined));
+  }
+  return c.json({ removed, trashQueued: trash.queued, skippedOpen: trash.skippedOpen });
+});
+
 admin.post('/sets/:id/drive-trash', requirePermission('drive.trash'), async (c) => {
   return c.json(await trashRound(c.env, getDrive(c.env, baseUrl(c.req.url)), c.get('user'), c.req.param('id'), clientIp(c)));
 });
@@ -173,7 +213,7 @@ admin.get('/drive/cleanup-preview', requirePermission('drive.trash'), async (c) 
 admin.post('/drive/cleanup', requirePermission('drive.trash'), async (c) => {
   const { days, confirm } = await readJson<{ days: number; confirm: string }>(c);
   const res = await cleanupOlderThan(c.env, c.get('user'), Number(days), String(confirm ?? ''), clientIp(c));
-  if (res.queued) c.executionCtx.waitUntil(processJobs(c.env, 25, baseUrl(c.req.url)).catch(() => undefined));
+  if (res.queued) c.executionCtx.waitUntil(processJobs(c.env, 8, baseUrl(c.req.url)).catch(() => undefined));
   return c.json(res);
 });
 

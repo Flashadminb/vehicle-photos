@@ -28,6 +28,9 @@ export function History() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  /** Sets about to be deleted (one row, the selection, or everything matching the filter). */
+  const [deleting, setDeleting] = useState<string[] | null>(null);
+  const [collecting, setCollecting] = useState(false);
   const [viewing, setViewing] = useState<string | null>(null);
   const [details, setDetails] = useState<string | null>(null);
   const [exporting, setExporting] = useState<{ done: number; total: number; ctrl: AbortController } | null>(null);
@@ -83,6 +86,27 @@ export function History() {
   const page = Math.min(pages, Math.floor(offset / pageSize) + 1);
   const allSelected = rows.length > 0 && rows.every((r) => selected.has(r.id));
 
+  /** IDs of every set matching the current filter (paged through the API, at most 500). */
+  async function allIdsForFilter() {
+    const ids: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const params = new URLSearchParams({ pageSize: '100', status, visibility, sort, direction: cursor ? 'next' : 'first' });
+      if (range) {
+        params.set('startDate', range.start);
+        params.set('endDate', range.end);
+        params.set('startTime', startTime);
+        params.set('endTime', endTime);
+      }
+      if (q.trim()) params.set('q', q.trim());
+      if (cursor) params.set('cursor', cursor);
+      const res: SetListResponse = await api<SetListResponse>('GET', `/api/admin/sets?${params}`);
+      ids.push(...res.rows.map((r) => r.id));
+      cursor = res.nextCursor;
+    } while (cursor && ids.length < 500);
+    return ids.slice(0, 500);
+  }
+
   async function runExport() {
     const ctrl = new AbortController();
     setExporting({ done: 0, total: 0, ctrl });
@@ -97,6 +121,18 @@ export function History() {
 
   return (
     <div className="page">
+      {deleting && (
+        <BulkDelete
+          ids={deleting}
+          canTrash={me.can('drive.trash')}
+          onClose={() => setDeleting(null)}
+          onDone={() => {
+            setDeleting(null);
+            setSelected(new Set());
+            void load('first');
+          }}
+        />
+      )}
       <div className="page-head">
         <h1>ประวัติชุดรูป</h1>
         <span className="muted small">1 แถว = 1 ชุดรูปที่สมบูรณ์ · เวลาเป็นเวลาประเทศไทย (Asia/Bangkok)</span>
@@ -157,6 +193,30 @@ export function History() {
             <button className="btn btn-sm" disabled={selected.size === 0 || !!exporting || selected.size > me.settings.exportMaxSets} onClick={() => void runExport()} title={`ได้สูงสุด ${me.settings.exportMaxSets} ชุดต่อครั้ง`}>
               ⬇ ส่งออก Excel {selected.size ? `(${selected.size} ชุด)` : ''}
             </button>
+          )}
+          {me.can('sets.remove') && (
+            <>
+              <button className="btn btn-sm btn-danger" disabled={selected.size === 0 || selected.size > 500} onClick={() => setDeleting([...selected])} title="ลบชุดที่ติ๊กไว้ (สูงสุด 500 ชุดต่อครั้ง)">
+                🗑 ลบที่เลือก {selected.size ? `(${selected.size} ชุด)` : ''}
+              </button>
+              <button
+                className="btn btn-sm btn-danger"
+                disabled={total === 0 || collecting || !!timeError}
+                title="ลบทุกชุดที่ตรงกับตัวกรองตอนนี้ (สูงสุด 500 ชุดต่อครั้ง)"
+                onClick={async () => {
+                  setCollecting(true);
+                  try {
+                    setDeleting(await allIdsForFilter());
+                  } catch (e) {
+                    alert((e as Error).message);
+                  } finally {
+                    setCollecting(false);
+                  }
+                }}
+              >
+                {collecting ? <span className="spinner" /> : '🗑'} ลบทั้งหมดตามตัวกรอง ({Math.min(total, 500).toLocaleString()} ชุด)
+              </button>
+            </>
           )}
           <label className="field-inline small">
             เรียง
@@ -224,6 +284,7 @@ export function History() {
                   }
                   onView={() => setViewing(r.id)}
                   onDetails={() => setDetails(r.id)}
+                  onDelete={me.can('sets.remove') ? () => setDeleting([r.id]) : undefined}
                 />
               ))}
               {!loading && rows.length === 0 && (
@@ -261,7 +322,7 @@ function storageLabel(r: SetRow) {
   return <div className="pills">{pills}</div>;
 }
 
-function Row({ r, checked, onCheck, onView, onDetails }: { r: SetRow; checked: boolean; onCheck: () => void; onView: () => void; onDetails: () => void }) {
+function Row({ r, checked, onCheck, onView, onDetails, onDelete }: { r: SetRow; checked: boolean; onCheck: () => void; onView: () => void; onDetails: () => void; onDelete?: () => void }) {
   const complete = r.activeCount >= r.requiredCount;
   return (
     <tr className={checked ? 'is-selected' : ''}>
@@ -293,6 +354,11 @@ function Row({ r, checked, onCheck, onView, onDetails }: { r: SetRow; checked: b
             </a>
           ) : (
             <button className="btn btn-sm" disabled>เปิดชุดใน Drive</button>
+          )}
+          {onDelete && (
+            <button className="btn btn-sm btn-danger btn-icon" onClick={onDelete} title={`ลบ ${r.publicId}`} aria-label={`ลบ ${r.publicId}`}>
+              🗑
+            </button>
           )}
         </div>
       </td>
@@ -645,6 +711,67 @@ function SetDetails({ id, onClose, onChanged }: { id: string; onClose: () => voi
           )}
         </div>
       )}
+    </Modal>
+  );
+}
+
+/** Bulk delete chosen sets: remove from history, optionally (Super Admin) move their photos to the Drive trash. */
+function BulkDelete({ ids, canTrash, onClose, onDone }: { ids: string[]; canTrash: boolean; onClose: () => void; onDone: () => void }) {
+  const [trashDrive, setTrashDrive] = useState(false);
+  const [typed, setTyped] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const WORD = 'ลบ';
+  const ready = !trashDrive || typed.trim() === WORD;
+  return (
+    <Modal title={ids.length === 1 ? 'ลบชุดนี้' : `ลบ ${ids.length.toLocaleString()} ชุด`} onClose={onClose}>
+      <div className="bulk-delete">
+        <p>
+          ชุดที่เลือกจะ<strong>หายจากประวัติ</strong> (ข้อมูลยังเก็บไว้ ผู้ดูแลสูงสุดกู้คืนได้จากตัวกรอง “ลบออกจากประวัติแล้ว”)
+        </p>
+        {canTrash ? (
+          <label className="checkbox">
+            <input type="checkbox" checked={trashDrive} onChange={(e) => setTrashDrive(e.target.checked)} />
+            <span>
+              ย้าย<strong>รูปใน Google Drive</strong> ไปถังขยะด้วย เพื่อคืนพื้นที่ (กู้คืนได้ภายใน 30 วัน · ชุดที่ยังถ่ายไม่เสร็จจะไม่ถูกแตะ)
+            </span>
+          </label>
+        ) : (
+          <p className="small muted">รูปใน Google Drive ยังอยู่ครบ (การลบรูปใน Drive ทำได้เฉพาะผู้ดูแลสูงสุด)</p>
+        )}
+        {trashDrive && (
+          <label className="field">
+            <span>พิมพ์ “{WORD}” เพื่อยืนยันลบรูปใน Drive</span>
+            <input className="input" value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus />
+          </label>
+        )}
+        {err && <p className="banner banner-bad small">{err}</p>}
+        <div className="details-actions">
+          <button className="btn" onClick={onClose} disabled={busy}>ยกเลิก</button>
+          <button
+            className="btn btn-danger"
+            disabled={busy || !ready}
+            onClick={async () => {
+              setBusy(true);
+              setErr('');
+              try {
+                const r = await api<{ removed: number; trashQueued: number; skippedOpen: number }>('POST', '/api/admin/sets/bulk-remove', { ids, trashDrive });
+                alert(
+                  `ลบออกจากประวัติ ${r.removed} ชุด` +
+                    (trashDrive ? ` · กำลังย้ายรูป ${r.trashQueued} ชุดไปถังขยะ Drive` : '') +
+                    (r.skippedOpen ? ` · ข้าม ${r.skippedOpen} ชุดที่ยังถ่ายไม่เสร็จ (รูปใน Drive ไม่ถูกแตะ)` : ''),
+                );
+                onDone();
+              } catch (e) {
+                setErr((e as Error).message);
+                setBusy(false);
+              }
+            }}
+          >
+            {trashDrive ? `ลบ ${ids.length} ชุด + รูปใน Drive` : `ลบ ${ids.length} ชุดออกจากประวัติ`}
+          </button>
+        </div>
+      </div>
     </Modal>
   );
 }

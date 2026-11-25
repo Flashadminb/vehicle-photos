@@ -3,7 +3,6 @@ import type { DriveClient } from '../drive/types';
 import { badRequest, conflict, notFound } from '../util';
 import { audit } from './audit';
 import { cacheKey } from './cache';
-import { enqueueStmt } from './jobs';
 import { bangkokDate } from '../../shared/time';
 
 /**
@@ -19,6 +18,7 @@ export const CLEANUP_MAX_SETS = 500;
 export const CLEANUP_CONFIRM = 'ย้ายไปถังขยะ';
 
 async function dropCache(env: Env, roundId: string) {
+  if (!env.CACHE) return; // no R2 cache configured: nothing to drop (and no D1 queries spent)
   const { results } = await env.DB.prepare(`SELECT id FROM images WHERE round_id = ?`).bind(roundId).all<{ id: string }>();
   if (!results.length) return;
   const keys = results.flatMap((i) => [cacheKey(i.id, 'thumb'), cacheKey(i.id, 'display')]);
@@ -78,6 +78,22 @@ export async function cleanupPreview(env: Env, days: number, now = Date.now()) {
   return { before, sets: r?.sets ?? 0, oldest: r?.oldest ?? null, newest: r?.newest ?? null, bytes: r?.bytes ?? 0, maxPerRun: CLEANUP_MAX_SETS };
 }
 
+
+/** Mark sets for the trash and queue their Drive calls with set-based SQL (2 queries per 90 sets). */
+async function markAndQueue(env: Env, user: AuthUser, ids: string[], now: number) {
+  for (let i = 0; i < ids.length; i += 90) {
+    const chunk = ids.slice(i, i + 90);
+    const inList = chunk.map(() => '?').join(',');
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO jobs (kind, ref_id, payload, status, attempts, next_run_at, created_at, updated_at)
+         SELECT 'drive_trash', id, NULL, 'pending', 0, ?, ?, ? FROM rounds WHERE drive_trashed_at IS NULL AND id IN (${inList})`,
+      ).bind(now, now, now, ...chunk),
+      env.DB.prepare(`UPDATE rounds SET drive_trashed_at = ?, drive_trashed_by = ?, updated_at = ? WHERE drive_trashed_at IS NULL AND id IN (${inList})`).bind(now, user.id, now, ...chunk),
+    ]);
+  }
+}
+
 /** Marks up to CLEANUP_MAX_SETS sets and queues one Drive call per set (run by the job worker). */
 export async function cleanupOlderThan(env: Env, user: AuthUser, days: number, confirm: string, ip: string, now = Date.now()) {
   if (confirm !== CLEANUP_CONFIRM) throw badRequest(`พิมพ์คำว่า "${CLEANUP_CONFIRM}" เพื่อยืนยัน`);
@@ -86,11 +102,7 @@ export async function cleanupOlderThan(env: Env, user: AuthUser, days: number, c
     .bind(before, CLEANUP_MAX_SETS)
     .all<{ id: string; public_id: string }>();
   if (!results.length) return { queued: 0 };
-  const stmts = results.flatMap((s) => [
-    env.DB.prepare(`UPDATE rounds SET drive_trashed_at = ?, drive_trashed_by = ?, updated_at = ? WHERE id = ? AND drive_trashed_at IS NULL`).bind(now, user.id, now, s.id),
-    enqueueStmt(env, 'drive_trash', s.id, null, now),
-  ]);
-  for (let i = 0; i < stmts.length; i += 100) await env.DB.batch(stmts.slice(i, i + 100));
+  await markAndQueue(env, user, results.map((r) => r.id), now);
   await audit(env, user, 'drive.cleanup', {}, { days, before, count: results.length, first: results[0].public_id, last: results.at(-1)!.public_id }, ip, now);
   return { queued: results.length };
 }
@@ -111,4 +123,23 @@ export async function driveUsage(env: Env, drive: DriveClient) {
   ).first<{ bytes: number }>();
   const pending = await env.DB.prepare(`SELECT COUNT(*) AS n FROM jobs WHERE kind = 'drive_trash' AND status IN ('pending','running')`).first<{ n: number }>();
   return { ...quota, appBytes: app?.bytes ?? 0, pendingTrash: pending?.n ?? 0 };
+}
+
+/** Mark chosen finished sets for the Drive trash and queue one Drive call each (bulk delete in History). */
+export async function trashSelected(env: Env, user: AuthUser, ids: string[], ip: string, now = Date.now()) {
+  if (!ids.length) return { queued: 0, skippedOpen: 0 };
+  const results: { id: string; public_id: string; status: string; drive_folder_id: string | null; drive_trashed_at: number | null }[] = [];
+  for (let i = 0; i < ids.length; i += 90) {
+    const chunk = ids.slice(i, i + 90);
+    const r = await env.DB.prepare(
+      `SELECT id, public_id, status, drive_folder_id, drive_trashed_at FROM rounds WHERE id IN (${chunk.map(() => '?').join(',')})`,
+    )
+      .bind(...chunk)
+      .all<(typeof results)[number]>();
+    results.push(...r.results);
+  }
+  const ok = results.filter((r) => r.status !== 'open' && r.drive_folder_id && !r.drive_trashed_at);
+  await markAndQueue(env, user, ok.map((r) => r.id), now);
+  if (ok.length) await audit(env, user, 'sets.bulk_drive_trashed', {}, { count: ok.length, publicIds: ok.map((s) => s.public_id) }, ip, now);
+  return { queued: ok.length, skippedOpen: results.filter((r) => r.status === 'open').length };
 }
