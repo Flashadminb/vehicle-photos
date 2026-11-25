@@ -314,6 +314,53 @@ describe('CaptureEngine', () => {
     expect(e2.getState().slots.rear.status).toBe('uploaded');
   });
 
+  it('asks the server for upload targets while the photo is still being prepared', async () => {
+    const prep = deferred<{ original: Blob; width: number; height: number }>();
+    let begun = 0;
+    const realBegin = server.begin.bind(server);
+    server.begin = async (req: any) => {
+      begun++;
+      return realBegin(req);
+    };
+    const e = new CaptureEngine(
+      {
+        transport: server,
+        store,
+        imaging: { prepare: () => prep.promise, render: async (b) => ({ display: b, thumb: b }) },
+        uuid: () => `id-${++ids}-xxxxxxxx`,
+        isOnline: () => true,
+        createObjectURL: () => 'blob:x',
+        revokeObjectURL: () => {},
+        stepLabel: (s) => s.labels.en,
+      },
+      wf(),
+    );
+    await e.accept('bar', photo(), 'camera');
+    await settle();
+    expect(begun).toBe(1); // begin already sent although prepare() has not finished
+    prep.resolve({ original: photo(), width: 1, height: 1 });
+    await settle();
+    expect(e.getState().slots.bar.status).toBe('uploading');
+  });
+
+  it('reports upload progress and clears it when saved', async () => {
+    const seen: number[] = [];
+    server.uploadToDrive = (url: string, blob: Blob, _s?: AbortSignal, onProgress?: (n: number) => void) => {
+      onProgress?.(blob.size / 2);
+      return new Promise((r) => setTimeout(() => r(`drive-${url}`), 5));
+    };
+    engine.subscribe((st) => {
+      const p = st.slots.bar?.progress;
+      if (p != null) seen.push(p);
+    });
+    await engine.accept('bar', photo(), 'camera');
+    await new Promise((r) => setTimeout(r, 30));
+    await settle();
+    expect(seen.some((p) => p > 0 && p < 1)).toBe(true);
+    expect(engine.getState().slots.bar.status).toBe('uploaded');
+    expect(engine.getState().slots.bar.progress).toBeUndefined();
+  });
+
   it('refuses file uploads for steps that disallow them', async () => {
     await expect(engine.accept('extra', photo(), 'upload')).rejects.toThrow('upload_not_allowed');
   });

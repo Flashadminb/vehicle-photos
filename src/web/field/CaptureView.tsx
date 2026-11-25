@@ -55,12 +55,13 @@ function statusKey(s: SlotStatus) {
   return s === 'empty' ? 'status_missing' : `status_${s}`;
 }
 
-function StatusChip({ status, t }: { status: SlotStatus; t: CaptureViewProps['t'] }) {
+function StatusChip({ status, t, progress }: { status: SlotStatus; t: CaptureViewProps['t']; progress?: number }) {
   const cls = status === 'uploaded' ? 'pill-ok' : status === 'failed' ? 'pill-bad' : status === 'uploading' || status === 'queued' ? 'pill-info' : '';
   return (
     <span className={`pill ${cls}`}>
       {status === 'uploading' ? <span className="spinner" aria-hidden /> : <span aria-hidden>{ICON[status]}</span>}
       {t(statusKey(status))}
+      {status === 'uploading' && progress != null && ` ${Math.round(progress * 100)}%`}
     </span>
   );
 }
@@ -135,7 +136,7 @@ export function CaptureView(p: CaptureViewProps) {
               <div className={`fa-current-photo ${p.viewfinder ? 'is-compact' : ''}`}>
                 <img src={slot.previewUrl} alt="" />
                 <div>
-                  <StatusChip status={slot.status} t={t} />
+                  <StatusChip status={slot.status} t={t} progress={slot.progress} />
                   <div className="small muted">{t('replace_photo')} ↓</div>
                 </div>
               </div>
@@ -199,7 +200,7 @@ export function CaptureView(p: CaptureViewProps) {
                         {s.label}
                         {!s.required && <span className="muted small"> · {t('optional')}</span>}
                       </span>
-                      <StatusChip status={sl.status} t={t} />
+                      <StatusChip status={sl.status} t={t} progress={sl.progress} />
                     </button>
                   </li>
                 );

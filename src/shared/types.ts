@@ -61,6 +61,12 @@ export interface AppSettings {
   dbQuotaBytes: number;
   dbThresholdPct: number;
   keepOriginals: boolean;
+  /** Longest edge (px) of the watermarked display copy stored in Drive. */
+  imageDisplayEdge: number;
+  /** Longest edge (px) of the original copy (when originals are kept). */
+  imageOriginalEdge: number;
+  /** Longest edge (px) requested from the in-app camera. */
+  cameraMaxEdge: number;
   ocrProvider: OcrProvider;
   /** Google Vision free units per month (TEXT_DETECTION). */
   visionMonthlyFree: number;
@@ -89,7 +95,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   cacheTargetPct: 60,
   dbQuotaBytes: 500 * 1024 * 1024,
   dbThresholdPct: 70,
-  keepOriginals: true,
+  keepOriginals: false,
+  imageDisplayEdge: 1280,
+  imageOriginalEdge: 2560,
+  cameraMaxEdge: 1920,
   ocrProvider: 'none',
   visionMonthlyFree: 1000,
   visionCapPct: 90,
@@ -108,7 +117,10 @@ export interface FieldBootstrap {
   workflow: WorkflowVersion;
   languages: Language[];
   translations: Record<string, Record<string, string>>;
-  settings: Pick<AppSettings, 'unknownPlateLabel' | 'defaultLanguage' | 'fallbackLanguage' | 'pinLockEnabled' | 'pinLockMinutes' | 'ocrBlocksDone'>;
+  settings: Pick<
+    AppSettings,
+    'unknownPlateLabel' | 'defaultLanguage' | 'fallbackLanguage' | 'pinLockEnabled' | 'pinLockMinutes' | 'ocrBlocksDone' | 'keepOriginals' | 'imageDisplayEdge' | 'imageOriginalEdge' | 'cameraMaxEdge'
+  >;
   driveMode: 'google' | 'demo';
   /** False when R2 is not configured: the phone then skips uploading cache copies. */
   cacheEnabled: boolean;

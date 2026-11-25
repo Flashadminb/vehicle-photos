@@ -3,13 +3,21 @@ import { formatBangkok } from '../../shared/time';
 
 /**
  * Image processing in the browser (the free Worker has no CPU budget for it).
- *  - Original: longest edge ≤ 2560 px, JPEG q=0.9 — keeps Thai plate characters crisp.
- *  - Display copy: ≤ 1600 px, q=0.85, with a visible, accurately labelled timestamp band.
- *  - Thumbnail: ≤ 360 px, q=0.72 (recent-view cache only).
+ *  - Original (only if originals are kept): longest edge ≤ originalEdge (2560), q=0.88.
+ *  - Display copy: ≤ displayEdge (1280 by default, set in the dashboard), q=0.82, with a
+ *    visible, accurately labelled timestamp band.
+ *  - Thumbnail: ≤ 360 px, q=0.75, made from the stamped display copy.
  */
-const ORIGINAL_EDGE = 2560;
-const DISPLAY_EDGE = 1600;
 const THUMB_EDGE = 360;
+
+export interface ImagingOptions {
+  /** Longest edge of the watermarked display copy (default 1280). */
+  displayEdge: number;
+  /** Longest edge of the original copy (default 2560). */
+  originalEdge: number;
+  /** Whether an original copy is uploaded at all (if not, skip encoding it). */
+  keepOriginals: boolean;
+}
 
 async function decode(blob: Blob): Promise<ImageBitmap> {
   try {
@@ -127,42 +135,48 @@ function drawWatermark(ctx: CanvasRenderingContext2D, w: number, h: number, wm: 
 /** Decoded bitmaps kept between prepare() and render() so each photo is decoded once. */
 const decoded = new WeakMap<Blob, ImageBitmap>();
 
-export const browserImaging: Imaging = {
-  async prepare(blob) {
-    const bmp = await decode(blob);
-    const small = Math.max(bmp.width, bmp.height) <= ORIGINAL_EDGE;
-    // Keep already-reasonable JPEGs byte-for-byte (best evidence, no recompression loss).
-    if (small && blob.type === 'image/jpeg' && blob.size < 2.5 * 1024 * 1024) {
+export function createImaging(opts: ImagingOptions): Imaging {
+  return {
+    async prepare(blob) {
+      const bmp = await decode(blob);
       decoded.set(blob, bmp);
-      return { original: blob, width: bmp.width, height: bmp.height };
-    }
-    const out = await encode(bmp, ORIGINAL_EDGE, 0.88);
-    decoded.set(out.blob, bmp);
-    return { original: out.blob, width: out.w, height: out.h };
-  },
-  async render(original, wm) {
-    const bmp = decoded.get(original) ?? (await decode(original));
-    decoded.delete(original);
-    try {
-      // Display copy with the timestamp…
-      const { w, h } = fit(bmp.width, bmp.height, DISPLAY_EDGE);
-      const { canvas, ctx } = canvasFor(w, h);
-      ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(bmp, 0, 0, w, h);
-      drawWatermark(ctx as CanvasRenderingContext2D, w, h, wm);
-      const display = await toBlob(canvas, 0.85);
-      // …and the thumbnail made from it, so the stamp shows there too.
-      const t = fit(w, h, THUMB_EDGE);
-      const th = canvasFor(t.w, t.h);
-      th.ctx.imageSmoothingQuality = 'high';
-      th.ctx.drawImage(canvas as CanvasImageSource, 0, 0, t.w, t.h);
-      const thumb = await toBlob(th.canvas, 0.75);
-      return { display, thumb };
-    } finally {
-      bmp.close();
-    }
-  },
-};
+      const small = Math.max(bmp.width, bmp.height) <= opts.originalEdge;
+      // No original is uploaded, or the JPEG is already small: no extra encoding work.
+      if (!opts.keepOriginals || (small && blob.type === 'image/jpeg' && blob.size < 2.5 * 1024 * 1024)) {
+        return { original: blob, width: bmp.width, height: bmp.height };
+      }
+      decoded.delete(blob);
+      const out = await encode(bmp, opts.originalEdge, 0.88);
+      decoded.set(out.blob, bmp);
+      return { original: out.blob, width: out.w, height: out.h };
+    },
+    async render(original, wm) {
+      const bmp = decoded.get(original) ?? (await decode(original));
+      decoded.delete(original);
+      try {
+        // Display copy with the timestamp…
+        const { w, h } = fit(bmp.width, bmp.height, opts.displayEdge);
+        const { canvas, ctx } = canvasFor(w, h);
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(bmp, 0, 0, w, h);
+        drawWatermark(ctx as CanvasRenderingContext2D, w, h, wm);
+        const display = await toBlob(canvas, 0.82);
+        // …and the thumbnail made from it, so the stamp shows there too.
+        const t = fit(w, h, THUMB_EDGE);
+        const th = canvasFor(t.w, t.h);
+        th.ctx.imageSmoothingQuality = 'high';
+        th.ctx.drawImage(canvas as CanvasImageSource, 0, 0, t.w, t.h);
+        const thumb = await toBlob(th.canvas, 0.75);
+        return { display, thumb };
+      } finally {
+        bmp.close();
+      }
+    },
+  };
+}
+
+/** Defaults (used when the server did not send image settings). */
+export const browserImaging: Imaging = createImaging({ displayEdge: 1280, originalEdge: 2560, keepOriginals: false });
 
 /** EXIF DateTimeOriginal of an uploaded file — stored as UNVERIFIED metadata only. */
 export async function readExifTime(file: Blob): Promise<string | null> {

@@ -154,7 +154,7 @@ describe('old sets', () => {
       const b = await field.json('POST', '/api/field/images/begin', { clientRoundId: round, clientImageId: rid(), workflowVersionId: wf.id, stepId: step.id, source: 'camera', acceptedAtDevice: Date.now() });
       roundId = b.body.round.id;
       const d = await putToDrive(field, b.body.uploads.display.url);
-      const o = await putToDrive(field, b.body.uploads.original.url);
+      const o = (b.body.uploads.original ? await putToDrive(field, b.body.uploads.original.url) : null);
       await field.json('POST', `/api/field/images/${b.body.image.id}/complete`, { displayFileId: d, originalFileId: o });
       await field.req('PUT', `/api/field/images/${b.body.image.id}/cache/thumb`, new Uint8Array([1, 2, 3]).buffer as ArrayBuffer);
     }
@@ -227,7 +227,7 @@ describe('hide / remove / plate correction', () => {
       const b = await field.json('POST', '/api/field/images/begin', { clientRoundId: round, clientImageId: rid(), workflowVersionId: wf.id, stepId: step.id, source: 'camera', acceptedAtDevice: Date.now() });
       roundId = b.body.round.id;
       const d = await putToDrive(field, b.body.uploads.display.url);
-      const o = await putToDrive(field, b.body.uploads.original.url);
+      const o = (b.body.uploads.original ? await putToDrive(field, b.body.uploads.original.url) : null);
       await field.json('POST', `/api/field/images/${b.body.image.id}/complete`, { displayFileId: d, originalFileId: o });
     }
     await field.json('POST', `/api/field/rounds/${roundId}/finalize`, { idempotencyKey: 'p' });

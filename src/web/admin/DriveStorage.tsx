@@ -137,8 +137,40 @@ export function DriveStorage() {
             </label>
             <label className="checkbox">
               <input type="checkbox" checked={s.keepOriginals} onChange={(e) => void save({ keepOriginals: e.target.checked })} />
-              เก็บรูปต้นฉบับที่ไม่มีลายน้ำด้วย (สำหรับตรวจสอบ / OCR) — ใช้พื้นที่ Drive ประมาณ 2 เท่า
+              เก็บรูปต้นฉบับที่ไม่มีลายน้ำด้วย (สำหรับตรวจสอบ / OCR) — อัปโหลดช้าลงและใช้พื้นที่ Drive ประมาณ 3–4 เท่า
             </label>
+            <label className="field">
+              <span>ขนาดรูปที่เก็บใน Drive (มีลายน้ำ)</span>
+              <select className="input" value={s.imageDisplayEdge} onChange={(e) => void save({ imageDisplayEdge: Number(e.target.value) })}>
+                <option value={1024}>1024 px — เล็กสุด เร็วสุด</option>
+                <option value={1280}>1280 px — แนะนำ</option>
+                <option value={1600}>1600 px</option>
+                <option value={2048}>2048 px — ละเอียด ช้ากว่า</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>ความละเอียดกล้องในแอป</span>
+              <select className="input" value={s.cameraMaxEdge} onChange={(e) => void save({ cameraMaxEdge: Number(e.target.value) })}>
+                <option value={1280}>1280 px</option>
+                <option value={1920}>1920 px — แนะนำ</option>
+                <option value={2560}>2560 px</option>
+                <option value={3840}>3840 px — สูงสุดเท่าที่กล้องให้</option>
+              </select>
+            </label>
+            {s.keepOriginals && (
+              <label className="field">
+                <span>ขนาดรูปต้นฉบับ</span>
+                <select className="input" value={s.imageOriginalEdge} onChange={(e) => void save({ imageOriginalEdge: Number(e.target.value) })}>
+                  <option value={2048}>2048 px</option>
+                  <option value={2560}>2560 px</option>
+                  <option value={3200}>3200 px</option>
+                </select>
+              </label>
+            )}
+            <p className="small muted span-all">
+              ประมาณการต่อชุด (3 รูป): ~{(3 * (s.imageDisplayEdge / 1280) ** 2 * 0.25 + (s.keepOriginals ? 3 * (s.imageOriginalEdge / 2560) ** 2 * 1.1 : 0)).toFixed(1)} MB
+              · ยิ่งเล็กยิ่งอัปโหลดเร็วและประหยัด Drive · มีผลกับมือถือเมื่อเปิดแอปใหม่
+            </p>
           </div>
         )}
         <h3 style={{ marginTop: 18 }}>สิทธิ์เข้าถึงแบบส่วนตัวสำหรับผู้ดูแล</h3>

@@ -6,7 +6,7 @@ import { CaptureEngine } from './engine';
 import { CaptureView } from './CaptureView';
 import { IdbStore, requestPersistentStorage } from './storage';
 import { httpTransport } from './transport';
-import { browserImaging, readExifTime } from './imaging';
+import { createImaging, readExifTime } from './imaging';
 import { useCamera, useWakeLock, Viewfinder, vibrate } from './camera';
 
 type Boot = FieldBootstrap & { mustChangePassword: boolean };
@@ -156,7 +156,11 @@ function Capture({ boot, reload, onSignedOut }: { boot: Boot; reload: () => Prom
         {
           transport: httpTransport,
           store: new IdbStore(boot.user.id),
-          imaging: browserImaging,
+          imaging: createImaging({
+            displayEdge: boot.settings.imageDisplayEdge ?? 1280,
+            originalEdge: boot.settings.imageOriginalEdge ?? 2560,
+            keepOriginals: boot.settings.keepOriginals ?? false,
+          }),
           cacheEnabled: boot.cacheEnabled !== false,
           stepLabel: (s) => stepLabel(s.labels, boot.settings.defaultLanguage, boot.settings.fallbackLanguage),
         },
@@ -226,7 +230,7 @@ function Capture({ boot, reload, onSignedOut }: { boot: Boot; reload: () => Prom
       return 'app';
     }
   });
-  const camera = useCamera(cameraMode === 'app' && onCaptureStep && !locked);
+  const camera = useCamera(cameraMode === 'app' && onCaptureStep && !locked, boot.settings.cameraMaxEdge ?? 1920);
   const [shutterBusy, setShutterBusy] = useState(false);
   const [flashKey, setFlashKey] = useState(0);
   useWakeLock(!!s.clientRoundId || camera.status === 'live');

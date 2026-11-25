@@ -40,7 +40,7 @@ describe('capture flow (HTTP, demo Drive)', () => {
     const b3 = await begin(wf.steps[2].id);
     for (const b of [b2, b3, b1]) {
       const disp = await putToDrive(client, b.body.uploads.display.url);
-      const orig = await putToDrive(client, b.body.uploads.original.url);
+      const orig = (b.body.uploads.original ? await putToDrive(client, b.body.uploads.original.url) : null);
       const done = await client.json('POST', `/api/field/images/${b.body.image.id}/complete`, { displayFileId: disp, originalFileId: orig });
       expect(done.status).toBe(200);
       expect(done.body.active).toBe(true);
@@ -98,8 +98,8 @@ describe('replacement safety', () => {
     // v2 completes first...
     const up = async (url: string) => (await import('../../src/worker/drive/demo')).DemoDrive.receiveUpload(testEnv, url.split('/').pop()!, new ArrayBuffer(10));
     const d2 = await up(v2.uploads!.display.url);
-    const o2 = await up(v2.uploads!.original!.url);
-    const c2 = await completeImage(testEnv, user, v2.image.id, { displayFileId: d2!.id, originalFileId: o2!.id }, { drive, baseUrl: ORIGIN });
+    const o2 = v2.uploads!.original ? await up(v2.uploads!.original.url) : null;
+    const c2 = await completeImage(testEnv, user, v2.image.id, { displayFileId: d2!.id, originalFileId: o2?.id ?? null }, { drive, baseUrl: ORIGIN });
     expect(c2.active).toBe(true);
 
     // ...then the stale v1 upload callback arrives late.

@@ -23,6 +23,8 @@ export interface Slot {
   error?: string;
   /** Object URL for showing the current round's own photo (never historical sets). */
   previewUrl?: string;
+  /** Upload progress 0..1 while uploading. */
+  progress?: number;
 }
 
 export interface StoredImage {
@@ -80,7 +82,7 @@ export interface Imaging {
 
 export interface FieldTransport {
   begin(req: BeginImageRequest, signal?: AbortSignal): Promise<BeginImageResponse>;
-  uploadToDrive(url: string, blob: Blob, signal?: AbortSignal): Promise<string>;
+  uploadToDrive(url: string, blob: Blob, signal?: AbortSignal, onProgress?: (sentBytes: number) => void): Promise<string>;
   putCache(imageId: string, kind: 'thumb' | 'display', blob: Blob): Promise<void>;
   complete(imageId: string, req: CompleteImageRequest, signal?: AbortSignal): Promise<CompleteImageResponse>;
   finalize(serverRoundId: string, key: string): Promise<FinalizeResponse>;
@@ -475,24 +477,24 @@ export class CaptureEngine {
       }
       await this.deps.store.putImage({ ...img, status: 'uploading' });
 
-      const prepared = await this.deps.imaging.prepare(img.blob);
+      // Ask the server for upload targets WHILE the photo is being prepared (saves a round trip).
+      const [prepared, begin] = await Promise.all([
+        this.deps.imaging.prepare(img.blob),
+        this.deps.transport.begin(
+          {
+            clientRoundId: round.clientRoundId,
+            clientImageId: localId,
+            workflowVersionId: wf.id,
+            stepId,
+            source: img.source,
+            acceptedAtDevice: img.acceptedAt,
+            captureTimeDevice: img.captureTime,
+            exifTime: img.exifTime,
+          },
+          ctrl.signal,
+        ),
+      ]);
       if (!stillActive()) return;
-
-      const begin = await this.deps.transport.begin(
-        {
-          clientRoundId: round.clientRoundId,
-          clientImageId: localId,
-          workflowVersionId: wf.id,
-          stepId,
-          source: img.source,
-          acceptedAtDevice: img.acceptedAt,
-          captureTimeDevice: img.captureTime,
-          exifTime: img.exifTime,
-          width: prepared.width,
-          height: prepared.height,
-        },
-        ctrl.signal,
-      );
       if (!round.serverRoundId) {
         round.serverRoundId = begin.round.id;
         round.publicId = begin.round.publicId;
@@ -518,11 +520,23 @@ export class CaptureEngine {
           stepNumber: wf.steps.indexOf(step) + 1,
         });
         if (!stillActive()) return;
-        // Display copy, original and cache copies upload in parallel.
+        // Display copy, original and cache copies upload in parallel, with progress shown.
         const uploads = begin.uploads;
+        const total = rendered.display.size + (uploads.original ? prepared.original.size : 0);
+        const sent = [0, 0];
+        let shown = 0;
+        const progress = (i: number) => (bytes: number) => {
+          sent[i] = bytes;
+          const p = Math.min(1, (sent[0] + sent[1]) / Math.max(1, total));
+          if (p - shown >= 0.05 || p === 1) {
+            shown = p;
+            this.setSlot(stepId, localId, { progress: p });
+          }
+        };
+        this.setSlot(stepId, localId, { progress: 0 });
         const [displayFileId, originalFileId] = await Promise.all([
-          this.deps.transport.uploadToDrive(uploads.display.url, rendered.display, ctrl.signal),
-          uploads.original ? this.deps.transport.uploadToDrive(uploads.original.url, prepared.original, ctrl.signal) : Promise.resolve(null),
+          this.deps.transport.uploadToDrive(uploads.display.url, rendered.display, ctrl.signal, progress(0)),
+          uploads.original ? this.deps.transport.uploadToDrive(uploads.original.url, prepared.original, ctrl.signal, progress(1)) : Promise.resolve(null),
           // Recent-view cache copies are best effort (skipped when R2 is not configured).
           this.deps.cacheEnabled === false
             ? Promise.resolve()
@@ -533,7 +547,7 @@ export class CaptureEngine {
         ]);
         const done = await this.deps.transport.complete(
           begin.image.id,
-          { displayFileId, originalFileId, displayBytes: rendered.display.size, originalBytes: prepared.original.size },
+          { displayFileId, originalFileId, displayBytes: rendered.display.size, originalBytes: uploads.original ? prepared.original.size : undefined },
           ctrl.signal,
         );
         if (!done.active || !this.isActive(localId)) return;
@@ -541,7 +555,7 @@ export class CaptureEngine {
         await this.deps.store.putImage({ ...img, blob: null, thumb: rendered.thumb, status: 'uploaded', serverImageId: begin.image.id, error: undefined });
         // Show the stamped thumbnail in the app from now on.
         const old = this.state.slots[stepId]?.previewUrl;
-        this.setSlot(stepId, localId, { status: 'uploaded', error: undefined, previewUrl: this.createObjectURL(rendered.thumb) });
+        this.setSlot(stepId, localId, { status: 'uploaded', error: undefined, progress: undefined, previewUrl: this.createObjectURL(rendered.thumb) });
         if (old) this.revokeObjectURL(old);
         return;
       } else {

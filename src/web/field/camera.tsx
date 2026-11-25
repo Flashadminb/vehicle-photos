@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  */
 export type CameraStatus = 'off' | 'starting' | 'live' | 'denied' | 'unsupported' | 'error';
 
-export function useCamera(active: boolean) {
+export function useCamera(active: boolean, maxEdge = 1920) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [status, setStatus] = useState<CameraStatus>('off');
@@ -44,7 +44,8 @@ export function useCamera(active: boolean) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: false,
-          video: { facingMode: { ideal: 'environment' }, width: { ideal: 3840 }, height: { ideal: 2160 } },
+          // Enough for plates and slips framed in the guide; smaller frames upload much faster.
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: maxEdge }, height: { ideal: Math.round((maxEdge * 9) / 16) } },
         });
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
@@ -70,7 +71,7 @@ export function useCamera(active: boolean) {
       cancelled = true;
       stop();
     };
-  }, [active, visible, stop]);
+  }, [active, visible, stop, maxEdge]);
 
   /** Grab the current frame as a JPEG. Fast: no shutter delay, no extra camera app. */
   const capture = useCallback(async (): Promise<Blob> => {
