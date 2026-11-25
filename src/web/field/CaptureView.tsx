@@ -21,6 +21,12 @@ export interface CaptureViewProps {
   canReview?: boolean;
   /** Set ID shown in the "saved" confirmation. */
   savedPublicId?: string | null;
+  /** Live in-app camera viewfinder (field app only; absent in the admin preview). */
+  viewfinder?: React.ReactNode;
+  /** Open the phone's own camera app instead of the in-app camera. */
+  onNativeCamera?: () => void;
+  /** Disable the shutter while the previous photo is being stored. */
+  shutterBusy?: boolean;
   doneEnabled: boolean;
   doneBlocker: 'missing' | 'uploading' | null;
   finalize: { status: 'idle' | 'pending' | 'failed'; error?: string };
@@ -124,8 +130,9 @@ export function CaptureView(p: CaptureViewProps) {
             <h1 id="fa-step-name" className="fa-step-name">
               {step.label}
             </h1>
+            {p.viewfinder}
             {slot?.previewUrl && slot.status !== 'empty' && (
-              <div className="fa-current-photo">
+              <div className={`fa-current-photo ${p.viewfinder ? 'is-compact' : ''}`}>
                 <img src={slot.previewUrl} alt="" />
                 <div>
                   <StatusChip status={slot.status} t={t} />
@@ -134,7 +141,7 @@ export function CaptureView(p: CaptureViewProps) {
               </div>
             )}
             <div className="fa-actions">
-              <button type="button" className="btn btn-primary fa-take" onClick={p.onTake} disabled={p.finalize.status === 'pending'}>
+              <button type="button" className="btn btn-primary fa-take" onClick={p.onTake} disabled={p.finalize.status === 'pending' || p.shutterBusy}>
                 <svg width="28" height="28" viewBox="0 0 24 24" aria-hidden fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M4 8h3l2-3h6l2 3h3v11H4z" />
                   <circle cx="12" cy="13" r="3.5" />
@@ -150,6 +157,11 @@ export function CaptureView(p: CaptureViewProps) {
                 {!step.required && (
                   <button type="button" className="btn" onClick={() => p.onSkip(step.id)}>
                     {t('skip_step')}
+                  </button>
+                )}
+                {p.onNativeCamera && (
+                  <button type="button" className="btn" onClick={p.onNativeCamera} disabled={p.finalize.status === 'pending'}>
+                    {t('native_camera')}
                   </button>
                 )}
               </div>

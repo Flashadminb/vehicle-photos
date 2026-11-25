@@ -1,6 +1,7 @@
 import type { Env } from '../env';
-import { getDrive } from '../drive';
-import { ensureReplacedFolder, syncRoundFolderName } from '../drive/folders';
+import { getDrive, effectiveRoot } from '../drive';
+import { bangkokDate } from '../../shared/time';
+import { ensureDateFolder, ensureReplacedFolder, syncRoundFolderName } from '../drive/folders';
 import type { DriveClient } from '../drive/types';
 import { getSettings } from './config';
 import { claimDueJobs, completeJob, failJob, enqueue, type JobRow } from './jobs';
@@ -130,8 +131,31 @@ export async function releaseWaitingQuota(env: Env) {
   return r.meta.changes;
 }
 
+/**
+ * Create today's (and, in the last hour before midnight, tomorrow's) date folder ahead of
+ * time, so the first photo of the day does not wait for Drive. After the first run each
+ * day this is a single D1 read; Drive is only contacted when the folder is missing.
+ */
+export async function precreateDateFolders(env: Env, now = Date.now()) {
+  const settings = await getSettings(env);
+  const root = effectiveRoot(env, settings.driveRootFolderId);
+  if (!root) return;
+  const dates = [bangkokDate(now)];
+  const tomorrow = bangkokDate(now + 3600_000);
+  if (tomorrow !== dates[0]) dates.push(tomorrow);
+  const drive = getDrive(env, env.PUBLIC_BASE_URL ?? '');
+  for (const d of dates) {
+    try {
+      await ensureDateFolder(env, drive, root, d);
+    } catch (e) {
+      console.warn('precreate date folder failed', d, (e as Error).message);
+    }
+  }
+}
+
 export async function scheduled(env: Env) {
   const settings = await getSettings(env);
+  await precreateDateFolders(env);
   await releaseWaitingQuota(env);
   await processJobs(env, 10);
   await evictCache(env, settings);

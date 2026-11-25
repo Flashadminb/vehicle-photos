@@ -7,6 +7,7 @@ import { CaptureView } from './CaptureView';
 import { IdbStore, requestPersistentStorage } from './storage';
 import { httpTransport } from './transport';
 import { browserImaging, readExifTime } from './imaging';
+import { useCamera, useWakeLock, Viewfinder, vibrate } from './camera';
 
 type Boot = FieldBootstrap & { mustChangePassword: boolean };
 
@@ -216,6 +217,51 @@ function Capture({ boot, reload, onSignedOut }: { boot: Boot; reload: () => Prom
   }, [boot.settings.pinLockEnabled, boot.settings.pinLockMinutes, boot.user.hasPin]);
 
   const step = s.workflow.steps[s.stepIndex];
+  const onCaptureStep = !!step && s.finalize.status !== 'pending';
+  // In-app camera unless this phone was switched to the phone's own camera app.
+  const [cameraMode, setCameraMode] = useState<'app' | 'native'>(() => {
+    try {
+      return localStorage.getItem('vp_camera_mode') === 'native' ? 'native' : 'app';
+    } catch {
+      return 'app';
+    }
+  });
+  const camera = useCamera(cameraMode === 'app' && onCaptureStep && !locked);
+  const [shutterBusy, setShutterBusy] = useState(false);
+  const [flashKey, setFlashKey] = useState(0);
+  useWakeLock(!!s.clientRoundId || camera.status === 'live');
+  useEffect(() => {
+    if (s.flash === 'set_saved') vibrate([40, 60, 40]);
+  }, [s.flash]);
+
+  async function takePhoto() {
+    if (!step) return;
+    if (camera.status !== 'live') {
+      cameraInput.current?.click();
+      return;
+    }
+    setShutterBusy(true);
+    try {
+      const captureTime = Date.now();
+      const blob = await camera.capture();
+      vibrate(30);
+      setFlashKey((k) => k + 1);
+      await engine.accept(step.id, blob, 'camera', { captureTime });
+    } catch {
+      cameraInput.current?.click(); // camera hiccup: fall back to the phone's camera app
+    } finally {
+      setShutterBusy(false);
+    }
+  }
+
+  function setMode(mode: 'app' | 'native') {
+    setCameraMode(mode);
+    try {
+      localStorage.setItem('vp_camera_mode', mode);
+    } catch {
+      /* private mode */
+    }
+  }
   const steps = s.workflow.steps.map((x) => ({ id: x.id, label: stepLabel(x.labels, lang, boot.settings.fallbackLanguage), required: x.required, allowUpload: x.allowUpload }));
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>, source: 'camera' | 'upload') {
@@ -257,7 +303,12 @@ function Capture({ boot, reload, onSignedOut }: { boot: Boot; reload: () => Prom
         finalize={s.finalize}
         flash={s.flash}
         demo={boot.driveMode === 'demo'}
-        onTake={() => cameraInput.current?.click()}
+        onTake={() => void takePhoto()}
+        shutterBusy={shutterBusy}
+        viewfinder={
+          cameraMode === 'app' && step ? <Viewfinder camera={camera} plateGuide={!!step.ocr} t={t} flashKey={flashKey} /> : undefined
+        }
+        onNativeCamera={cameraMode === 'app' ? () => cameraInput.current?.click() : undefined}
         onUpload={() => fileInput.current?.click()}
         onSkip={(id) => void engine.skip(id)}
         onSelectStep={(i) => engine.goTo(i)}
@@ -287,6 +338,10 @@ function Capture({ boot, reload, onSignedOut }: { boot: Boot; reload: () => Prom
                       </option>
                     ))}
                   </select>
+                </label>
+                <label className="checkbox">
+                  <input type="checkbox" checked={cameraMode === 'app'} onChange={(e) => setMode(e.target.checked ? 'app' : 'native')} />
+                  {t('in_app_camera')}
                 </label>
                 <button className="btn" onClick={() => void signOut()}>{t('sign_out')}</button>
               </div>

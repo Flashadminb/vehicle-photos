@@ -52,6 +52,13 @@ export const TRANSLATION_KEYS = [
   'no_round_hint',
   'start_capture',
   'back_to_done',
+  'camera_starting',
+  'camera_denied',
+  'camera_unavailable',
+  'plate_guide',
+  'torch',
+  'native_camera',
+  'in_app_camera',
 ] as const;
 
 export type TranslationKey = (typeof TRANSLATION_KEYS)[number];
@@ -105,6 +112,13 @@ export const BUILTIN_TRANSLATIONS: Record<string, Record<TranslationKey, string>
     no_round_hint: 'Saved sets are kept in the dashboard. Photos taken on another phone or browser are not shown here.',
     start_capture: 'Start with step 1',
     back_to_done: 'Back to DONE',
+    camera_starting: 'Starting camera…',
+    camera_denied: 'Camera permission was refused. Allow the camera for this site in the browser settings — until then the phone camera app is used.',
+    camera_unavailable: 'The in-app camera is not available on this phone. The phone camera app will be used.',
+    plate_guide: 'Fit the plate inside the frame',
+    torch: 'Light',
+    native_camera: 'Phone camera',
+    in_app_camera: 'Use in-app camera (faster)',
   },
   th: {
     app_name: 'ถ่ายรูปรถ',
@@ -154,6 +168,13 @@ export const BUILTIN_TRANSLATIONS: Record<string, Record<TranslationKey, string>
     no_round_hint: 'ชุดที่กดเสร็จสิ้นแล้วถูกบันทึกไว้ในหลังบ้าน รูปที่ถ่ายบนมือถือหรือเบราว์เซอร์อื่นจะไม่แสดงในเครื่องนี้',
     start_capture: 'เริ่มถ่ายขั้นตอนที่ 1',
     back_to_done: 'ไม่ถ่ายใหม่ กลับไปหน้าเสร็จสิ้น',
+    camera_starting: 'กำลังเปิดกล้อง…',
+    camera_denied: 'ไม่ได้รับอนุญาตให้ใช้กล้อง ให้เปิดสิทธิ์กล้องของเว็บนี้ในการตั้งค่าเบราว์เซอร์ ระหว่างนี้จะใช้แอปกล้องของมือถือแทน',
+    camera_unavailable: 'มือถือนี้ใช้กล้องในแอปไม่ได้ จะใช้แอปกล้องของมือถือแทน',
+    plate_guide: 'เล็งป้ายทะเบียนให้อยู่ในกรอบ',
+    torch: 'ไฟ',
+    native_camera: 'กล้องมือถือ',
+    in_app_camera: 'ใช้กล้องในแอป (เร็วกว่า)',
   },
 };
 

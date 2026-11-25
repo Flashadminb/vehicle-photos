@@ -246,3 +246,25 @@ describe('finalization', () => {
     expect(r.status).toBe('open');
   });
 });
+
+describe('date folder pre-creation', () => {
+  it('creates today’s date folder once; later runs do not touch Drive', async () => {
+    const { precreateDateFolders } = await import('../../src/worker/services/maintenance');
+    const { setDriveOverride } = await import('../../src/worker/drive');
+    const drive = recordingDrive();
+    setDriveOverride(() => drive);
+    try {
+      const when = bangkokToUtc('2026-09-01', '00:05:00');
+      await precreateDateFolders(testEnv, when);
+      expect((await drive.findFolders('demo-root', '2026-09-01')).length).toBe(1);
+      const calls = drive.calls.length;
+      await precreateDateFolders(testEnv, when + 15 * 60_000);
+      expect(drive.calls.length).toBe(calls); // D1 says it exists: no Drive call
+      // Last hour of the day: tomorrow's folder is prepared too.
+      await precreateDateFolders(testEnv, bangkokToUtc('2026-09-01', '23:10:00'));
+      expect((await drive.findFolders('demo-root', '2026-09-02')).length).toBe(1);
+    } finally {
+      setDriveOverride(null);
+    }
+  });
+});
