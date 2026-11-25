@@ -8,6 +8,7 @@ import { getCurrentWorkflow, getLanguages, getSettings, getTranslationOverrides 
 import { beginImage, completeImage, finalizeRound, roundState } from '../services/rounds';
 import { MAX_CACHE_OBJECT_BYTES, putCache } from '../services/cache';
 import { isDemo } from '../drive';
+import { processJobs } from '../services/maintenance';
 
 export const field = new Hono<AppBindings>();
 
@@ -47,6 +48,7 @@ field.get('/bootstrap', async (c) => {
       ocrBlocksDone: settings.ocrBlocksDone,
     },
     driveMode: isDemo(c.env) ? 'demo' : 'google',
+    cacheEnabled: !!c.env.CACHE,
     serverTime: Date.now(),
   };
   return c.json({ ...body, mustChangePassword: c.get('user').mustChangePassword });
@@ -113,6 +115,15 @@ field.post('/images/begin', async (c) => {
 field.post('/images/:id/complete', async (c) => {
   const body = await readJson<CompleteImageRequest>(c);
   const res = await completeImage(c.env, c.get('user'), c.req.param('id'), body, { baseUrl: baseUrl(c.req.url) });
+  // Start plate recognition (and any other queued Drive job) right away instead of waiting
+  // for the 15-minute cron. Runs after the response is sent, so it never slows the phone down.
+  if (res.active) {
+    try {
+      c.executionCtx.waitUntil(processJobs(c.env, 3, baseUrl(c.req.url)).catch((e) => console.error('jobs', e)));
+    } catch {
+      /* no execution context (tests) */
+    }
+  }
   return c.json(res);
 });
 

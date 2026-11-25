@@ -58,54 +58,106 @@ async function encode(bmp: ImageBitmap, edge: number, quality: number, draw?: (c
   return { blob: await toBlob(canvas, quality), w, h };
 }
 
-export function watermarkLines(wm: Watermark): string[] {
-  const lines: string[] = [];
-  if (wm.source === 'camera') {
-    lines.push(`CAPTURED (device clock): ${formatBangkok(wm.captureTime)} ICT`);
-  } else {
-    lines.push('UPLOADED FILE — original capture time NOT verified');
-    if (wm.exifTime) lines.push(`EXIF time (unverified): ${wm.exifTime}`);
-  }
-  lines.push(`RECEIVED BY SERVER: ${formatBangkok(wm.serverReceivedAt)} ICT`);
-  lines.push(`${wm.publicId} · ${String(wm.stepNumber).padStart(2, '0')} ${wm.stepLabel}`);
-  return lines;
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/** "25/11/2026 10:45:12" in Asia/Bangkok. */
+export function stampTime(utcMs: number): string {
+  const s = formatBangkok(utcMs); // YYYY-MM-DD HH:mm:ss
+  const [d, t] = s.split(' ');
+  const [y, m, day] = d.split('-');
+  return `${day}/${m}/${y} ${t}`;
 }
 
-function drawWatermark(ctx: CanvasRenderingContext2D, w: number, h: number, lines: string[]) {
-  const size = Math.max(14, Math.round(Math.min(w, h) * 0.032));
-  const pad = Math.round(size * 0.6);
-  const lineH = Math.round(size * 1.3);
-  const bandH = pad * 2 + lineH * lines.length;
-  ctx.fillStyle = 'rgba(0,0,0,0.55)';
-  ctx.fillRect(0, h - bandH, w, bandH);
-  ctx.font = `600 ${size}px system-ui, 'Noto Sans Thai', 'Leelawadee UI', sans-serif`;
-  ctx.fillStyle = '#fff';
-  ctx.textBaseline = 'top';
-  lines.forEach((line, i) => ctx.fillText(line, pad, h - bandH + pad + i * lineH, w - pad * 2));
+/**
+ * The visible timestamp stamped on every stored display copy. Labels say exactly which
+ * clock the time came from:
+ *  - camera photo: the phone clock at capture ("ถ่ายเมื่อ … (เวลามือถือ)")
+ *  - uploaded file: the real capture time is unknown, so the big time is the SERVER
+ *    receipt time and the label says so; any EXIF date is shown as unverified.
+ */
+export function watermarkLines(wm: Watermark): { big: string; small: string[] } {
+  const received = stampTime(wm.serverReceivedAt);
+  const step = `${wm.publicId} · ${pad2(wm.stepNumber)} ${wm.stepLabel}`;
+  if (wm.source === 'camera' && wm.captureTime != null) {
+    return {
+      big: stampTime(wm.captureTime),
+      small: ['ถ่ายเมื่อ (เวลามือถือ) · Captured (device clock)', `เซิร์ฟเวอร์รับ ${received}`, step],
+    };
+  }
+  const small = ['ไฟล์อัปโหลด — ไม่ทราบเวลาถ่ายจริง · Uploaded file, capture time unknown'];
+  if (wm.exifTime) small.push(`EXIF (ไม่ได้ยืนยัน) ${wm.exifTime}`);
+  small.push(`เวลาที่เซิร์ฟเวอร์รับ · Server received`, step);
+  return { big: received, small };
 }
+
+const FONT = `system-ui, 'Noto Sans Thai', 'Leelawadee UI', Thonburi, sans-serif`;
+
+function drawWatermark(ctx: CanvasRenderingContext2D, w: number, h: number, wm: Watermark) {
+  const { big, small } = watermarkLines(wm);
+  const unit = Math.min(w, h);
+  const bigSize = Math.max(22, Math.round(unit * 0.065));
+  const smallSize = Math.max(13, Math.round(unit * 0.028));
+  const pad = Math.round(unit * 0.03);
+  const gap = Math.round(smallSize * 0.35);
+  const bandH = pad * 2 + bigSize + gap + small.length * (smallSize + gap);
+  // Soft dark band across the bottom so the stamp is readable on any photo.
+  const grad = ctx.createLinearGradient(0, h - bandH - pad, 0, h);
+  grad.addColorStop(0, 'rgba(0,0,0,0)');
+  grad.addColorStop(0.25, 'rgba(0,0,0,0.55)');
+  grad.addColorStop(1, 'rgba(0,0,0,0.7)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, h - bandH - pad, w, bandH + pad);
+  ctx.textBaseline = 'top';
+  ctx.shadowColor = 'rgba(0,0,0,0.6)';
+  ctx.shadowBlur = Math.round(unit * 0.004);
+  let y = h - bandH + pad;
+  ctx.fillStyle = '#ffd54a';
+  ctx.font = `700 ${bigSize}px ${FONT}`;
+  ctx.fillText(big, pad, y, w - pad * 2);
+  y += bigSize + gap;
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `600 ${smallSize}px ${FONT}`;
+  for (const line of small) {
+    ctx.fillText(line, pad, y, w - pad * 2);
+    y += smallSize + gap;
+  }
+  ctx.shadowBlur = 0;
+}
+
+/** Decoded bitmaps kept between prepare() and render() so each photo is decoded once. */
+const decoded = new WeakMap<Blob, ImageBitmap>();
 
 export const browserImaging: Imaging = {
   async prepare(blob) {
     const bmp = await decode(blob);
-    try {
-      const small = Math.max(bmp.width, bmp.height) <= ORIGINAL_EDGE;
-      // Keep already-reasonable JPEGs byte-for-byte (best evidence, no recompression loss).
-      if (small && blob.type === 'image/jpeg' && blob.size < 2.5 * 1024 * 1024) {
-        return { original: blob, width: bmp.width, height: bmp.height };
-      }
-      const out = await encode(bmp, ORIGINAL_EDGE, 0.9);
-      return { original: out.blob, width: out.w, height: out.h };
-    } finally {
-      bmp.close();
+    const small = Math.max(bmp.width, bmp.height) <= ORIGINAL_EDGE;
+    // Keep already-reasonable JPEGs byte-for-byte (best evidence, no recompression loss).
+    if (small && blob.type === 'image/jpeg' && blob.size < 2.5 * 1024 * 1024) {
+      decoded.set(blob, bmp);
+      return { original: blob, width: bmp.width, height: bmp.height };
     }
+    const out = await encode(bmp, ORIGINAL_EDGE, 0.88);
+    decoded.set(out.blob, bmp);
+    return { original: out.blob, width: out.w, height: out.h };
   },
   async render(original, wm) {
-    const bmp = await decode(original);
+    const bmp = decoded.get(original) ?? (await decode(original));
+    decoded.delete(original);
     try {
-      const lines = watermarkLines(wm);
-      const display = await encode(bmp, DISPLAY_EDGE, 0.85, (ctx, w, h) => drawWatermark(ctx, w, h, lines));
-      const thumb = await encode(bmp, THUMB_EDGE, 0.72);
-      return { display: display.blob, thumb: thumb.blob };
+      // Display copy with the timestamp…
+      const { w, h } = fit(bmp.width, bmp.height, DISPLAY_EDGE);
+      const { canvas, ctx } = canvasFor(w, h);
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(bmp, 0, 0, w, h);
+      drawWatermark(ctx as CanvasRenderingContext2D, w, h, wm);
+      const display = await toBlob(canvas, 0.85);
+      // …and the thumbnail made from it, so the stamp shows there too.
+      const t = fit(w, h, THUMB_EDGE);
+      const th = canvasFor(t.w, t.h);
+      th.ctx.imageSmoothingQuality = 'high';
+      th.ctx.drawImage(canvas as CanvasImageSource, 0, 0, t.w, t.h);
+      const thumb = await toBlob(th.canvas, 0.75);
+      return { display, thumb };
     } finally {
       bmp.close();
     }

@@ -98,6 +98,8 @@ export interface EngineDeps {
   /** Retry delays in ms for temporary failures. */
   backoff?: number[];
   concurrency?: number;
+  /** False when the server has no R2 cache: skip uploading cache copies. */
+  cacheEnabled?: boolean;
   stepLabel: (step: WorkflowVersion['steps'][number]) => string;
 }
 
@@ -151,7 +153,7 @@ export class CaptureEngine {
     this.createObjectURL = deps.createObjectURL ?? ((b) => URL.createObjectURL(b));
     this.revokeObjectURL = deps.revokeObjectURL ?? ((u) => URL.revokeObjectURL(u));
     this.backoff = deps.backoff ?? [2000, 5000, 15000, 30000, 60000];
-    this.concurrency = deps.concurrency ?? 2;
+    this.concurrency = deps.concurrency ?? 3;
     this.state = this.emptyState(workflow);
   }
 
@@ -514,15 +516,18 @@ export class CaptureEngine {
           stepNumber: wf.steps.indexOf(step) + 1,
         });
         if (!stillActive()) return;
-        const displayFileId = await this.deps.transport.uploadToDrive(begin.uploads.display.url, rendered.display, ctrl.signal);
-        let originalFileId: string | null = null;
-        if (begin.uploads.original) {
-          originalFileId = await this.deps.transport.uploadToDrive(begin.uploads.original.url, prepared.original, ctrl.signal);
-        }
-        // Recent-view cache copies are best effort; Drive is the system of record.
-        await Promise.allSettled([
-          this.deps.transport.putCache(begin.image.id, 'thumb', rendered.thumb),
-          this.deps.transport.putCache(begin.image.id, 'display', rendered.display),
+        // Display copy, original and cache copies upload in parallel.
+        const uploads = begin.uploads;
+        const [displayFileId, originalFileId] = await Promise.all([
+          this.deps.transport.uploadToDrive(uploads.display.url, rendered.display, ctrl.signal),
+          uploads.original ? this.deps.transport.uploadToDrive(uploads.original.url, prepared.original, ctrl.signal) : Promise.resolve(null),
+          // Recent-view cache copies are best effort (skipped when R2 is not configured).
+          this.deps.cacheEnabled === false
+            ? Promise.resolve()
+            : Promise.allSettled([
+                this.deps.transport.putCache(begin.image.id, 'thumb', rendered.thumb),
+                this.deps.transport.putCache(begin.image.id, 'display', rendered.display),
+              ]),
         ]);
         const done = await this.deps.transport.complete(
           begin.image.id,
@@ -532,6 +537,11 @@ export class CaptureEngine {
         if (!done.active || !this.isActive(localId)) return;
         // Acknowledged: now (and only now) the full-size local copy can go.
         await this.deps.store.putImage({ ...img, blob: null, thumb: rendered.thumb, status: 'uploaded', serverImageId: begin.image.id, error: undefined });
+        // Show the stamped thumbnail in the app from now on.
+        const old = this.state.slots[stepId]?.previewUrl;
+        this.setSlot(stepId, localId, { status: 'uploaded', error: undefined, previewUrl: this.createObjectURL(rendered.thumb) });
+        if (old) this.revokeObjectURL(old);
+        return;
       } else {
         await this.deps.store.putImage({ ...img, blob: null, status: 'uploaded', serverImageId: begin.image.id });
       }

@@ -84,6 +84,8 @@ export interface FieldBootstrap {
   translations: Record<string, Record<string, string>>;
   settings: Pick<AppSettings, 'unknownPlateLabel' | 'defaultLanguage' | 'fallbackLanguage' | 'pinLockEnabled' | 'pinLockMinutes' | 'ocrBlocksDone'>;
   driveMode: 'google' | 'demo';
+  /** False when R2 is not configured: the phone then skips uploading cache copies. */
+  cacheEnabled: boolean;
   serverTime: number;
 }
 

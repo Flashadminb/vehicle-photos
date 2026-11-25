@@ -156,6 +156,7 @@ function Capture({ boot, reload, onSignedOut }: { boot: Boot; reload: () => Prom
           transport: httpTransport,
           store: new IdbStore(boot.user.id),
           imaging: browserImaging,
+          cacheEnabled: boot.cacheEnabled !== false,
           stepLabel: (s) => stepLabel(s.labels, boot.settings.defaultLanguage, boot.settings.fallbackLanguage),
         },
         boot.workflow,

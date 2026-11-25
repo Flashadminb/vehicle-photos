@@ -202,12 +202,14 @@ export async function beginImage(
   // 4. Fresh resumable upload sessions (Drive session URLs never expose credentials).
   if (image.status === 'pending' && image.active) {
     try {
-      const display = await drive.createUploadSession(folderId, image.file_name, 'image/jpeg', opts.origin);
+      // Both sessions are created in parallel to cut a Drive round trip.
+      const origName = image.file_name.replace(/\.jpg$/, '_original.jpg');
+      const [display, original] = await Promise.all([
+        drive.createUploadSession(folderId, image.file_name, 'image/jpeg', opts.origin),
+        settings.keepOriginals ? drive.createUploadSession(folderId, origName, 'image/jpeg', opts.origin) : Promise.resolve(null),
+      ]);
       const uploads: BeginImageResponse['uploads'] = { display: { url: display, name: image.file_name } };
-      if (settings.keepOriginals) {
-        const origName = image.file_name.replace(/\.jpg$/, '_original.jpg');
-        uploads.original = { url: await drive.createUploadSession(folderId, origName, 'image/jpeg', opts.origin), name: origName };
-      }
+      if (original) uploads.original = { url: original, name: origName };
       response.uploads = uploads;
     } catch (e) {
       driveError(e);
@@ -238,10 +240,10 @@ export async function completeImage(
   const settings = await getSettings(env);
   const drive = opts.drive ?? getDrive(env, opts.baseUrl);
   try {
-    const ids = [input.displayFileId, ...(settings.keepOriginals && image.active ? [input.originalFileId] : [])];
-    for (const id of ids) {
-      if (!id) throw badRequest('originalFileId is required while originals are kept.');
-      const f = await drive.getFile(id);
+    // Verify every file the phone reports (display always; original when it was uploaded), in parallel.
+    const ids = [input.displayFileId, ...(input.originalFileId ? [input.originalFileId] : [])];
+    const files = await Promise.all(ids.map((id) => drive.getFile(id)));
+    for (const f of files) {
       if (!f || f.trashed || !f.parents.includes(round.drive_folder_id)) {
         throw new ApiError(422, 'upload_not_verified', 'ตรวจสอบไฟล์ใน Drive ไม่ได้ ระบบจะอัปโหลดใหม่');
       }
