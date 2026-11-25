@@ -724,9 +724,22 @@ export async function readDocument(buffer, { debugDir } = {}) {
       await fs.writeFile(join(debugDir, `doc-${rot}-${psm}.png`), img);
     }
     await worker.setParameters({ tessedit_pageseg_mode: psm, tessedit_char_whitelist: '', user_defined_dpi: '300' });
-    const { data } = await worker.recognize(img);
+    let { data } = await worker.recognize(img);
+    let slip = parseSlip(data.text);
+    // Thai+English can turn Thai letters into Latin look-alikes ("บพ1007" → "uw1007"):
+    // then read the same image with the Thai-only model and prefer it if it gives the same digits.
+    if (slip && /[a-z]/.test(slip.plate)) {
+      const thaiOnly = await getWorker();
+      await thaiOnly.setParameters({ tessedit_pageseg_mode: psm, tessedit_char_whitelist: '', user_defined_dpi: '300' });
+      const t = await thaiOnly.recognize(img);
+      const alt = parseSlip(t.data.text);
+      const digits = (p) => (p || '').replace(/\D/g, '');
+      if (alt && /[ก-ฮ]/.test(alt.plate) && digits(alt.plate) === digits(slip.plate)) {
+        slip = alt;
+        data = t.data;
+      }
+    }
     lastText = data.text;
-    const slip = parseSlip(data.text);
     if (slip && !(slip.fallback && fallbackResult)) {
       const line = data.text.split('\n').find((l) => l.includes('(') || l.includes('（')) ?? '';
       // Fallback (any format on the plate line): the OCR's own confidence, capped at 75%.
