@@ -60,7 +60,7 @@ export function extractThaiPlate(raw: string | null | undefined): string | null 
  * "725067723224(พระนครศรีอยุธยา)". The generic form is only accepted when the bracket holds a
  * real province, so dates, barcodes and other IDs on the slip are ignored.
  */
-export function extractSlipPlate(raw: string | null | undefined): { plate: string; province: string } | null {
+export function extractSlipPlate(raw: string | null | undefined): { plate: string; province: string; fallback?: true } | null {
   if (!raw) return null;
   const text = raw.normalize('NFC').replace(/[–—]/g, '-').replace(/\s+/g, ' ');
   for (const m of text.matchAll(/[(（]\s*([\u0E00-\u0E7F ]{2,30}?)\s*[)）]/g)) {
@@ -71,6 +71,40 @@ export function extractSlipPlate(raw: string | null | undefined): { plate: strin
     const classic = /^[0-9]?[ก-ฮ]{1,3} ?-?\d{1,4}$/.test(id) || /^\d{2}-\d{4}$/.test(id);
     const cleaned = m[1].replace(/\s/g, '');
     if (province || (classic && cleaned.length >= 3)) return { plate: prettySlipId(id), province: province ?? cleaned };
+  }
+  // Last resort: whatever is printed where the plate goes, in any format.
+  return slipLineFallback(raw);
+}
+
+const SLIP_DATE = /(?:19|20)\d{2}\s*[-/.]\s*\d{1,2}\s*[-/.]\s*\d{1,2}/;
+
+/**
+ * Format-agnostic fallback for the dispatch slip: take the text printed on the plate line —
+ * the line right under "Proof of Van Dispatching", or the line that carries the date and a
+ * bracket — minus the date, whatever its format. Marked `fallback` (lower confidence).
+ */
+export function slipLineFallback(raw: string): { plate: string; province: string; fallback: true } | null {
+  const lines = raw
+    .normalize('NFC')
+    .replace(/[–—]/g, '-')
+    .split(/\r?\n/)
+    .map((l) => l.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  const candidates: string[] = [];
+  const anchor = lines.findIndex((l) => /proof\s*of\s*van|van\s*dispatch/i.test(l));
+  if (anchor >= 0) candidates.push(...lines.slice(anchor + 1, anchor + 3));
+  candidates.push(...lines.filter((l) => SLIP_DATE.test(l) && /[(（]/.test(l)));
+  for (const line of candidates) {
+    const t = line.replace(SLIP_DATE, ' ').trim();
+    const open = t.search(/[(（]/);
+    const before = (open >= 0 ? t.slice(0, open) : t).trim();
+    const inside = open >= 0 ? t.slice(open + 1).replace(/[)）].*$/, '') : '';
+    // The ID is the run of letters/digits/dashes right before the bracket (spaces from OCR removed).
+    const idMatch = /([0-9A-Za-zก-ฮ][0-9A-Za-zก-ฮ ./-]*)$/.exec(before);
+    const id = (idMatch?.[1] ?? '').replace(/\s+/g, '').replace(/^[-./]+|[-./]+$/g, '').slice(-24);
+    if ((id.match(/[0-9A-Za-zก-ฮ]/g)?.length ?? 0) < 2) continue;
+    const thai = inside.replace(/[^\u0E00-\u0E7F]/g, '');
+    return { plate: prettySlipId(id), province: matchProvince(thai) ?? thai, fallback: true };
   }
   return null;
 }

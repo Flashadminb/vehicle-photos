@@ -202,6 +202,7 @@ export function toSetRow(r: any, settings: AppSettings, drive: Pick<DriveClient,
     removed: !!r.removed_at,
     driveTrashed: !!r.drive_trashed_at,
     workflowId: r.workflow_id ?? 'default',
+    plateConfidence: r.plate_source === 'ocr' ? (r.plate_confidence ?? null) : null,
     imagesAllowed: !r.drive_trashed_at && (isRecent(r.op_date, settings, now) || settings.imageDisplayMode === 'cache'),
   };
 }

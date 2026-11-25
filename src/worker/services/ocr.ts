@@ -44,7 +44,11 @@ export function resultFromText(raw: string, confidence: number | null, kind: Ocr
     // Only the "บร7865(เพชรบุรี)" pattern counts on a slip; other text (dates, IDs) is ignored.
     const slip = extractSlipPlate(stripWatermarkLines(raw));
     // Keep everything that was printed, province included: "725067723224 (พระนครศรีอยุธยา)".
-    return { raw: raw.slice(0, 2000), plate: slip ? `${slip.plate} (${slip.province})` : null, confidence: slip ? (confidence ?? 0.85) : confidence };
+    if (!slip) return { raw: raw.slice(0, 2000), plate: null, confidence };
+    // The format-agnostic fallback is less certain than a recognised "plate(province)".
+    // Fallback: keep the reader's own confidence, capped below a recognised "plate(province)".
+    const conf = slip.fallback ? Math.min(confidence ?? 0.7, 0.75) : (confidence ?? 0.85);
+    return { raw: raw.slice(0, 2000), plate: slip.province ? `${slip.plate} (${slip.province})` : slip.plate, confidence: conf };
   }
   return { raw: raw.slice(0, 2000), plate: extractThaiPlate(stripWatermarkLines(raw)), confidence };
 }

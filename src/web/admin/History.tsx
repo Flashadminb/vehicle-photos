@@ -374,6 +374,15 @@ function Row({ r, checked, onCheck, onView, onDetails, onDelete, profileName }: 
       <td className="nowrap">
         {r.plate ? <strong>{r.plate}</strong> : <span className="muted">{r.plateDisplay}</span>}
         {r.plateSource === 'manual' && <span className="pill pill-info tiny" title="แก้ไขโดยผู้ดูแล">แก้ไขแล้ว</span>}
+        {r.plateSource === 'ocr' && r.plateConfidence != null && (
+          <span
+            className={`pill tiny ${r.plateConfidence >= 0.8 ? 'pill-ok' : 'pill-warn'}`}
+            title={r.plateConfidence >= 0.8 ? 'ความมั่นใจของการอ่านอัตโนมัติ' : 'อ่านอัตโนมัติแบบไม่แน่ใจ — ควรตรวจทานกับรูป'}
+          >
+            {r.plateConfidence < 0.8 && '⚠ '}
+            {Math.round(r.plateConfidence * 100)}%
+          </span>
+        )}
       </td>
       <td>
         {r.operator.name}

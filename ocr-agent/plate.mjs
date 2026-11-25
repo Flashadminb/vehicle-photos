@@ -539,6 +539,29 @@ export function parseSlip(text) {
     const cleaned = m[1].replace(/\s/g, '');
     if (province || (classic && cleaned.length >= 3)) return { plate: id.replace(/([ก-ฮ])(?=\d)/g, '$1 '), province, provinceText: cleaned };
   }
+  return slipLineFallback(text);
+}
+
+const SLIP_DATE = /(?:19|20)\d{2}\s*[-/.]\s*\d{1,2}\s*[-/.]\s*\d{1,2}/;
+
+/** Same as the server's slipLineFallback: the text on the plate line, whatever its format. */
+function slipLineFallback(raw) {
+  const lines = (raw || '').normalize('NFC').replace(/[–—]/g, '-').split(/\r?\n/).map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const candidates = [];
+  const anchor = lines.findIndex((l) => /proof\s*of\s*van|van\s*dispatch/i.test(l));
+  if (anchor >= 0) candidates.push(...lines.slice(anchor + 1, anchor + 3));
+  candidates.push(...lines.filter((l) => SLIP_DATE.test(l) && /[(（]/.test(l)));
+  for (const line of candidates) {
+    const t = line.replace(SLIP_DATE, ' ').trim();
+    const open = t.search(/[(（]/);
+    const before = (open >= 0 ? t.slice(0, open) : t).trim();
+    const inside = open >= 0 ? t.slice(open + 1).replace(/[)）].*$/, '') : '';
+    const idMatch = /([0-9A-Za-zก-ฮ][0-9A-Za-zก-ฮ ./-]*)$/.exec(before);
+    const id = (idMatch?.[1] ?? '').replace(/\s+/g, '').replace(/^[-./]+|[-./]+$/g, '').slice(-24);
+    if ((id.match(/[0-9A-Za-zก-ฮ]/g)?.length ?? 0) < 2) continue;
+    const thai = inside.replace(/[^\u0E00-\u0E7F]/g, '');
+    return { plate: id.replace(/([ก-ฮ])(?=\d)/g, '$1 '), province: matchProvince(thai), provinceText: thai, fallback: true };
+  }
   return null;
 }
 
@@ -573,6 +596,7 @@ export async function readDocument(buffer, { debugDir } = {}) {
     [270, PSM.SPARSE_TEXT], [90, PSM.SPARSE_TEXT],
   ];
   let lastText = '';
+  let fallbackResult = null;
   for (const [rot, psm] of attempts) {
     const img = await sharp(base).rotate(rot).resize({ width: 1800, height: 1800, fit: 'inside' }).grayscale().normalize().png().toBuffer();
     if (debugDir) {
@@ -584,19 +608,27 @@ export async function readDocument(buffer, { debugDir } = {}) {
     const { data } = await worker.recognize(img);
     lastText = data.text;
     const slip = parseSlip(data.text);
-    if (slip) {
+    if (slip && !(slip.fallback && fallbackResult)) {
       const line = data.text.split('\n').find((l) => l.includes('(') || l.includes('（')) ?? '';
-      return {
+      // Fallback (any format on the plate line): the OCR's own confidence, capped at 75%.
+      const ocrConf = Math.max(0, Math.min(1, (data.confidence ?? 0) / 100));
+      const result = {
         plate: slip.plate,
         province: slip.province,
         // Structure + a real province name is strong evidence; without it, stay below the cut-off.
-        confidence: slip.province ? 0.9 : 0.6,
-        text: `${line.trim()}${slip.province ? `\n[จังหวัด] ${slip.province}` : ''}`.slice(0, 1500),
+        confidence: slip.fallback ? Math.min(ocrConf, 0.75) : slip.province ? 0.9 : 0.6,
+        // The whole text for a fallback, so the server can find the plate line too.
+        text: (slip.fallback ? data.text : `${line.trim()}${slip.province ? `\n[จังหวัด] ${slip.province}` : ''}`).slice(0, 1500),
         plateFound: true,
         timings: { totalMs: Date.now() - t0, rotation: rot },
       };
+      // A fallback reading is kept while the other rotations are tried for a proper match.
+      if (!slip.fallback) return result;
+      fallbackResult = result;
+      continue;
     }
   }
+  if (fallbackResult) return { ...fallbackResult, timings: { ...fallbackResult.timings, totalMs: Date.now() - t0 } };
   return { plate: null, province: null, confidence: 0, text: lastText.replace(/\s+/g, ' ').slice(0, 500), plateFound: false, timings: { totalMs: Date.now() - t0 } };
 }
 

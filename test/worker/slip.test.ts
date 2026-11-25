@@ -25,6 +25,19 @@ describe('extractSlipPlate', () => {
     expect(p('ทะเบียน บร7865(เพชรบุรี)')).toBe('บร 7865'); // the word before is not part of it
   });
 
+  it('falls back to whatever is printed on the plate line (any format), with lower confidence', async () => {
+    const { resultFromText } = await import('../../src/worker/services/ocr');
+    const raw = 'Proof of Van Dispatching\nZ9/X-77 (ทดสอบ) 2026-11-25\nSAM1VFME63';
+    const r = resultFromText(raw, 0.93, 'document');
+    expect(r.plate).toBe('Z9/X-77 (ทดสอบ)');
+    expect(r.confidence).toBe(0.75); // capped: not a recognised plate(province)
+    expect(resultFromText('Proof of Van Dispatching\nAB 1234 2026-11-25', 0.5, 'document').plate).toBe('AB1234');
+    // Strict matches keep their higher confidence.
+    expect(resultFromText('700-9296(กรุงเทพ) 2026-11-25', 0.9, 'document')).toMatchObject({ plate: '700-9296 (กรุงเทพมหานคร)', confidence: 0.9 });
+    // Nothing on a plate line: nothing invented.
+    expect(resultFromText('Proof of Van Dispatching\n|||| ||| 2026-11-25', 0.9, 'document').plate).toBeNull();
+  });
+
   it('understands short province names printed on slips', () => {
     expect(extractSlipPlate('66-0632(กรุงเทพ) 2026-11-25')).toEqual({ plate: '66-0632', province: 'กรุงเทพมหานคร' });
     expect(extractSlipPlate('3ฒช6128(กรุงเทพ)')).toEqual({ plate: '3ฒช 6128', province: 'กรุงเทพมหานคร' });

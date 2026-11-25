@@ -237,6 +237,8 @@ export interface SetRow {
   imagesAllowed: boolean;
   /** Capture profile the set was taken with. */
   workflowId?: string;
+  /** Confidence (0-1) of an automatic plate reading; null for manual/none. */
+  plateConfidence?: number | null;
 }
 
 export interface SetListResponse {
