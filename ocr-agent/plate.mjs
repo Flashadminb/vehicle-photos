@@ -558,8 +558,9 @@ function slipLineFallback(raw) {
     const inside = open >= 0 ? t.slice(open + 1).replace(/[)）].*$/, '') : '';
     const idMatch = /([0-9A-Za-zก-ฮ][0-9A-Za-zก-ฮ ./-]*)$/.exec(before);
     const id = (idMatch?.[1] ?? '').replace(/\s+/g, '').replace(/^[-./]+|[-./]+$/g, '').slice(-24);
-    if ((id.match(/[0-9A-Za-zก-ฮ]/g)?.length ?? 0) < 2) continue;
-    const thai = inside.replace(/[^\u0E00-\u0E7F]/g, '');
+    if ((id.match(/\d/g)?.length ?? 0) < 3) continue;
+    const thaiRaw = inside.replace(/[^\u0E00-\u0E7F]/g, '');
+    const thai = thaiRaw.length >= 3 ? thaiRaw : '';
     return { plate: id.replace(/([ก-ฮ])(?=\d)/g, '$1 '), province: matchProvince(thai), provinceText: thai, fallback: true };
   }
   return null;
@@ -571,8 +572,8 @@ function slipIdBefore(before) {
   for (let i = tokens.length - 1; i >= 0 && picked.length < 5; i--) {
     const tok = tokens[i];
     if (!/^[0-9A-Za-zก-ฮ./-]+$/.test(tok)) break;
-    if (!/\d/.test(tok) && !/^[ก-ฮ]{1,3}$/.test(tok)) break;
-    if (picked.length && /^[ก-ฮ]+\d/.test(picked[0]) && /^\d+$/.test(tok)) break;
+    if (!/\d/.test(tok) && !/^[ก-ฮ]{1,3}$/.test(tok) && !/^[-./]+$/.test(tok)) break;
+    if (picked.length && /^[ก-ฮ]+\d/.test(picked[0]) && /^\d{2,}$/.test(tok)) break;
     picked.unshift(tok);
   }
   const id = picked.join('').replace(/^[-./]+|[-./]+$/g, '');
@@ -580,6 +581,95 @@ function slipIdBefore(before) {
   const digits = id.match(/\d/g)?.length ?? 0;
   if (digits < 1 || (digits < 3 && !/[ก-ฮ]/.test(id))) return null;
   return id;
+}
+
+/**
+ * Last resort for the dispatch slip: the plate line is printed right beside the barcode, and a
+ * barcode is easy to find even when the text is small or the page is crooked. Find it, cut the
+ * strip next to it (both sides, every orientation), enlarge it and read just that line.
+ */
+async function findBarcodes(base) {
+  const { cv } = await loadCv();
+  const meta = await sharp(base).metadata();
+  const scale = Math.min(1, 1000 / Math.max(meta.width, meta.height));
+  const { data, info } = await sharp(base).resize({ width: Math.round(meta.width * scale) }).grayscale().raw().toBuffer({ resolveWithObject: true });
+  const gray = cv.matFromArray(info.height, info.width, cv.CV_8UC1, Array.from(data));
+  const gx = new cv.Mat(), gy = new cv.Mat();
+  cv.Sobel(gray, gx, cv.CV_16S, 1, 0, 3);
+  cv.Sobel(gray, gy, cv.CV_16S, 0, 1, 3);
+  cv.convertScaleAbs(gx, gx);
+  cv.convertScaleAbs(gy, gy);
+  const found = [];
+  for (const vertical of [false, true]) {
+    const diff = new cv.Mat();
+    if (vertical) cv.subtract(gy, gx, diff); else cv.subtract(gx, gy, diff);
+    cv.blur(diff, diff, new cv.Size(5, 5));
+    cv.threshold(diff, diff, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU);
+    const k = cv.getStructuringElement(cv.MORPH_RECT, vertical ? new cv.Size(7, 15) : new cv.Size(15, 7));
+    cv.morphologyEx(diff, diff, cv.MORPH_CLOSE, k);
+    const small = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
+    cv.erode(diff, diff, small, new cv.Point(-1, -1), 3);
+    cv.dilate(diff, diff, small, new cv.Point(-1, -1), 3);
+    const contours = new cv.MatVector(), hier = new cv.Mat();
+    cv.findContours(diff, contours, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    for (let i = 0; i < contours.size(); i++) {
+      const r = cv.boundingRect(contours.get(i));
+      const long = vertical ? r.height : r.width, short = vertical ? r.width : r.height;
+      const fill = cv.contourArea(contours.get(i)) / (r.width * r.height);
+      if (long / short >= 1.6 && long / short <= 9 && r.width * r.height > 0.002 * info.width * info.height && fill > 0.5) {
+        found.push({ x: r.x / scale, y: r.y / scale, w: r.width / scale, h: r.height / scale, vertical, area: r.width * r.height });
+      }
+    }
+    diff.delete(); k.delete(); small.delete(); contours.delete(); hier.delete();
+  }
+  gray.delete(); gx.delete(); gy.delete();
+  return { list: found.sort((a, b) => b.area - a.area).slice(0, 2), width: meta.width, height: meta.height };
+}
+
+function stripsBeside(b, W, H) {
+  const clamp = (x, y, w, h) => {
+    const l = Math.max(0, Math.round(x)), t = Math.max(0, Math.round(y));
+    const r = Math.min(W, Math.round(x + w)), btm = Math.min(H, Math.round(y + h));
+    return r - l > 8 && btm - t > 8 ? { left: l, top: t, width: r - l, height: btm - t } : null;
+  };
+  const out = [];
+  // The text may have merged into the barcode blob, so each strip straddles the blob's edge.
+  if (!b.vertical) {
+    const inn = b.h * 0.4, outr = b.h * 0.6, len = b.w * 1.9;
+    out.push({ box: clamp(b.x - b.w * 0.1, b.y - outr, len, inn + outr), rot: 0 });
+    out.push({ box: clamp(b.x + b.w * 1.1 - len, b.y + b.h - inn, len, inn + outr), rot: 180 });
+  } else {
+    const inn = b.w * 0.4, outr = b.w * 0.6, len = b.h * 1.9;
+    const right = b.x + b.w - inn, left = b.x - outr;
+    out.push({ box: clamp(right, b.y - b.h * 0.1, inn + outr, len), rot: 270 }, { box: clamp(right, b.y + b.h * 1.1 - len, inn + outr, len), rot: 90 });
+    out.push({ box: clamp(left, b.y + b.h * 1.1 - len, inn + outr, len), rot: 90 }, { box: clamp(left, b.y - b.h * 0.1, inn + outr, len), rot: 270 });
+  }
+  return out.filter((s) => s.box);
+}
+
+export async function readNearBarcode(base, worker, debugDir) {
+  const { list, width, height } = await findBarcodes(base);
+  let n = 0;
+  for (const b of list) {
+    for (const s of stripsBeside(b, width, height)) {
+      const cut = await sharp(base).extract(s.box).png().toBuffer();
+      const thick = s.rot === 0 || s.rot === 180 ? s.box.height : s.box.width;
+      const png = await sharp(cut).rotate(s.rot).resize({ height: Math.min(280, Math.max(140, Math.round(thick * 2.5))) }).grayscale().normalize().png().toBuffer();
+      if (debugDir) {
+        const fs = await import('node:fs/promises');
+        await fs.mkdir(debugDir, { recursive: true });
+        await fs.writeFile(join(debugDir, `barcode-strip-${n++}.png`), png);
+      }
+      for (const psm of [PSM.SINGLE_BLOCK, PSM.SPARSE_TEXT]) {
+        await worker.setParameters({ tessedit_pageseg_mode: psm, tessedit_char_whitelist: '', user_defined_dpi: '300' });
+        const { data } = await worker.recognize(png);
+        const slip = parseSlip(data.text);
+        // Only a proper "ID(province)" counts here; the any-format fallback is too loose for a cut strip.
+        if (slip && !slip.fallback) return { slip, text: data.text };
+      }
+    }
+  }
+  return null;
 }
 
 /**
@@ -626,6 +716,26 @@ export async function readDocument(buffer, { debugDir } = {}) {
       if (!slip.fallback) return result;
       fallbackResult = result;
       continue;
+    }
+  }
+  // Whole page found no proper "ID(province)": try the strip next to the barcode.
+  if (!process.env.VP_SKIP_BARCODE) {
+    try {
+      const near = await readNearBarcode(base, worker, debugDir);
+      if (near) {
+        const line = near.text.split('\n').find((l) => l.includes('(') || l.includes('（')) ?? near.text;
+        return {
+          plate: near.slip.plate,
+          province: near.slip.province,
+          // Read from a cut strip: good, but flagged for a quick check (below the 80 % "sure" line).
+          confidence: near.slip.province ? 0.78 : 0.6,
+          text: `${line.trim()}${near.slip.province ? `\n[จังหวัด] ${near.slip.province}` : ''}`.slice(0, 1500),
+          plateFound: true,
+          timings: { totalMs: Date.now() - t0, method: 'barcode' },
+        };
+      }
+    } catch (e) {
+      if (debugDir) console.warn('barcode search failed:', e.message);
     }
   }
   if (fallbackResult) return { ...fallbackResult, timings: { ...fallbackResult.timings, totalMs: Date.now() - t0 } };

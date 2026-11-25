@@ -102,8 +102,10 @@ export function slipLineFallback(raw: string): { plate: string; province: string
     // The ID is the run of letters/digits/dashes right before the bracket (spaces from OCR removed).
     const idMatch = /([0-9A-Za-zก-ฮ][0-9A-Za-zก-ฮ ./-]*)$/.exec(before);
     const id = (idMatch?.[1] ?? '').replace(/\s+/g, '').replace(/^[-./]+|[-./]+$/g, '').slice(-24);
-    if ((id.match(/[0-9A-Za-zก-ฮ]/g)?.length ?? 0) < 2) continue;
-    const thai = inside.replace(/[^\u0E00-\u0E7F]/g, '');
+    // Any format, but it must look like an ID: at least 3 digits (rejects OCR noise like "ขยง" or "40").
+    if ((id.match(/\d/g)?.length ?? 0) < 3) continue;
+    const thaiRaw = inside.replace(/[^\u0E00-\u0E7F]/g, '');
+    const thai = thaiRaw.length >= 3 ? thaiRaw : '';
     return { plate: prettySlipId(id), province: matchProvince(thai) ?? thai, fallback: true };
   }
   return null;
@@ -122,9 +124,10 @@ function slipIdBefore(before: string): string | null {
     if (!/^[0-9A-Za-zก-ฮ./-]+$/.test(t)) break;
     const hasDigit = /\d/.test(t);
     const shortThai = /^[ก-ฮ]{1,3}$/.test(t);
-    if (!hasDigit && !shortThai) break; // a word such as "Dispatching" or "ทะเบียน" ends the ID
-    // "บร7865" is already a whole plate: a separate number before it is noise (e.g. "5 บร7865").
-    if (picked.length && /^[ก-ฮ]+\d/.test(picked[0]) && /^\d+$/.test(t)) break;
+    const joiner = /^[-./]+$/.test(t); // "66 - 0632": OCR split the dash off
+    if (!hasDigit && !shortThai && !joiner) break; // a word such as "Dispatching" or "ทะเบียน" ends the ID
+    // Before a whole "บร7865" only a single-digit prefix belongs to it ("3 ฒช6128" → "3ฒช6128").
+    if (picked.length && /^[ก-ฮ]+\d/.test(picked[0]) && /^\d{2,}$/.test(t)) break;
     picked.unshift(t);
   }
   const id = picked.join('').replace(/^[-./]+|[-./]+$/g, '');

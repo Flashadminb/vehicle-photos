@@ -10,7 +10,9 @@ describe('extractSlipPlate', () => {
     expect(extractSlipPlate('Proof of Van Dispatching\nบร7865(เพชรบุรี) 2026-11-25\nSAM1VFBZ63')).toEqual({ plate: 'บร 7865', province: 'เพชรบุรี' });
     expect(extractSlipPlate('1กข 2345 (กรุงเทพมหานคร)')).toEqual({ plate: '1กข 2345', province: 'กรุงเทพมหานคร' });
     expect(extractSlipPlate('70-1234(ชลบุรี)')).toEqual({ plate: '70-1234', province: 'ชลบุรี' });
-    expect(extractSlipPlate('5 บร7865(เพชรบุรี)')).toEqual({ plate: 'บร 7865', province: 'เพชรบุรี' });
+    expect(extractSlipPlate('15 บร7865(เพชรบุรี)')).toEqual({ plate: 'บร 7865', province: 'เพชรบุรี' });
+    expect(extractSlipPlate('3 ฒช6128(กรุงเทพ)')).toEqual({ plate: '3ฒช 6128', province: 'กรุงเทพมหานคร' });
+    expect(extractSlipPlate('66 - 0632(กรุงเทพ)')).toEqual({ plate: '66-0632', province: 'กรุงเทพมหานคร' });
     expect(extractSlipPlate('2026-11-25 SAM1VFBZ63 21BPLL')).toBeNull();
   });
 
@@ -32,6 +34,8 @@ describe('extractSlipPlate', () => {
     expect(r.plate).toBe('Z9/X-77 (ทดสอบ)');
     expect(r.confidence).toBe(0.75); // capped: not a recognised plate(province)
     expect(resultFromText('Proof of Van Dispatching\nAB 1234 2026-11-25', 0.5, 'document').plate).toBe('AB1234');
+    // OCR noise from a wrong rotation is not taken: too few digits.
+    expect(resultFromText('Proof of Van Dispatching\nขยง (งจ)\n40 (ค) 2026-11-25', 0.9, 'document').plate).toBeNull();
     // Strict matches keep their higher confidence.
     expect(resultFromText('700-9296(กรุงเทพ) 2026-11-25', 0.9, 'document')).toMatchObject({ plate: '700-9296 (กรุงเทพมหานคร)', confidence: 0.9 });
     // Nothing on a plate line: nothing invented.
