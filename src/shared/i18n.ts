@@ -61,6 +61,7 @@ export const TRANSLATION_KEYS = [
   'in_app_camera',
   'doc_guide',
   'slip_line_guide',
+  'zoom',
   'check_photo',
   'next_step',
   'go_to_done',
@@ -129,6 +130,7 @@ export const BUILTIN_TRANSLATIONS: Record<string, Record<TranslationKey, string>
     in_app_camera: 'Use in-app camera (faster)',
     doc_guide: 'Fit the whole slip inside the frame, landscape',
     slip_line_guide: 'Zoom in: the plate line, e.g. บร7865(เพชรบุรี), fills the frame',
+    zoom: 'Zoom',
   },
   th: {
     app_name: 'ถ่ายรูปรถ',
@@ -190,6 +192,7 @@ export const BUILTIN_TRANSLATIONS: Record<string, Record<TranslationKey, string>
     in_app_camera: 'ใช้กล้องในแอป (เร็วกว่า)',
     doc_guide: 'วางใบบาร์ทั้งใบให้เต็มกรอบ (แนวนอน)',
     slip_line_guide: 'ซูมบรรทัดทะเบียน เช่น บร7865(เพชรบุรี) ให้เต็มกรอบ',
+    zoom: 'ซูม',
   },
 };
 

@@ -236,6 +236,12 @@ function Capture({ boot, reload, onSignedOut }: { boot: Boot; reload: () => Prom
   // Sharper frames when this set has photos read by OCR (slip / plate); other photos are still downsized for upload.
   const wantsSharp = !!boot.settings.ocrHighRes && s.workflow.steps.some((x) => x.ocr);
   const camera = useCamera(cameraMode === 'app' && onCaptureStep && !locked, Math.max(boot.settings.cameraMaxEdge ?? 1920, wantsSharp ? 2560 : 0));
+  // Each step starts unzoomed (a zoomed slip close-up should not carry over to the next photo).
+  const { setZoom } = camera;
+  const minZoom = camera.zoom.min;
+  useEffect(() => {
+    void setZoom(minZoom);
+  }, [step?.id, setZoom, minZoom]);
   const [shutterBusy, setShutterBusy] = useState(false);
   /** After an in-app shot: show it big with "Retake" / "Next". The upload already runs in the background. */
   const [justShot, setJustShot] = useState<{ stepId: string; index: number } | null>(null);

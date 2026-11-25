@@ -13,6 +13,13 @@ export function useCamera(active: boolean, maxEdge = 1920) {
   const streamRef = useRef<MediaStream | null>(null);
   const [status, setStatus] = useState<CameraStatus>('off');
   const [torch, setTorch] = useState({ supported: false, on: false });
+  /**
+   * Zoom: the camera's own (optical/sensor) zoom when the phone exposes it (most Android
+   * Chrome), otherwise a digital zoom: the preview is scaled and the shot is cropped to match.
+   */
+  const [zoom, setZoomState] = useState({ value: 1, min: 1, max: 4, step: 0.1, hardware: false });
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
   const [visible, setVisible] = useState(() => (typeof document === 'undefined' ? true : document.visibilityState === 'visible'));
 
   useEffect(() => {
@@ -58,8 +65,14 @@ export function useCamera(active: boolean, maxEdge = 1920) {
           await video.play().catch(() => undefined);
         }
         const track = stream.getVideoTracks()[0];
-        const caps = (track?.getCapabilities?.() ?? {}) as MediaTrackCapabilities & { torch?: boolean };
+        const caps = (track?.getCapabilities?.() ?? {}) as MediaTrackCapabilities & { torch?: boolean; zoom?: { min: number; max: number; step?: number } };
         setTorch({ supported: !!caps.torch, on: false });
+        if (caps.zoom && caps.zoom.max > caps.zoom.min) {
+          const max = Math.min(caps.zoom.max, 10);
+          setZoomState({ value: caps.zoom.min, min: caps.zoom.min, max, step: caps.zoom.step || 0.1, hardware: true });
+        } else {
+          setZoomState({ value: 1, min: 1, max: 4, step: 0.1, hardware: false });
+        }
         setStatus('live');
       } catch (e) {
         if (cancelled) return;
@@ -78,9 +91,13 @@ export function useCamera(active: boolean, maxEdge = 1920) {
     const video = videoRef.current;
     if (!video || !video.videoWidth) throw new Error('camera_not_ready');
     const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext('2d')!.drawImage(video, 0, 0);
+    const z = zoomRef.current;
+    const digital = z.hardware ? 1 : Math.max(1, z.value);
+    // Digital zoom: keep the centre of the frame (what the scaled preview shows).
+    const sw = Math.round(video.videoWidth / digital), sh = Math.round(video.videoHeight / digital);
+    canvas.width = sw;
+    canvas.height = sh;
+    canvas.getContext('2d')!.drawImage(video, (video.videoWidth - sw) / 2, (video.videoHeight - sh) / 2, sw, sh, 0, 0, sw, sh);
     return new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('encode_failed'))), 'image/jpeg', 0.92));
   }, []);
 
@@ -96,7 +113,21 @@ export function useCamera(active: boolean, maxEdge = 1920) {
     }
   }, [torch.on]);
 
-  return { videoRef, status, capture, torch, toggleTorch };
+  const setZoom = useCallback(async (v: number) => {
+    const z = zoomRef.current;
+    const value = Math.min(z.max, Math.max(z.min, Math.round(v / z.step) * z.step));
+    setZoomState((s) => ({ ...s, value }));
+    if (z.hardware) {
+      const track = streamRef.current?.getVideoTracks()[0];
+      try {
+        await track?.applyConstraints({ advanced: [{ zoom: value } as MediaTrackConstraintSet] });
+      } catch {
+        /* the camera refused this value: the slider still shows it, the next change retries */
+      }
+    }
+  }, []);
+
+  return { videoRef, status, capture, torch, toggleTorch, zoom, setZoom };
 }
 
 export function Viewfinder({
@@ -116,7 +147,15 @@ export function Viewfinder({
   }
   return (
     <div className="fa-vf">
-      <video ref={camera.videoRef} playsInline muted autoPlay aria-label={t('take_photo')} />
+      <video
+        ref={camera.videoRef}
+        playsInline
+        muted
+        autoPlay
+        aria-label={t('take_photo')}
+        style={!camera.zoom.hardware && camera.zoom.value > 1 ? { transform: `scale(${camera.zoom.value})` } : undefined}
+      />
+      {status === 'live' && <PinchZoom camera={camera} />}
       {status !== 'live' && <div className="fa-vf-msg small">{t('camera_starting')}</div>}
       {guide && status === 'live' && (
         <div className={`fa-vf-guide ${guide === 'slip' ? 'is-doc' : guide === 'slip_line' ? 'is-line' : ''}`} aria-hidden>
@@ -128,8 +167,61 @@ export function Viewfinder({
           🔦 {t('torch')}
         </button>
       )}
+      {status === 'live' && <ZoomControls camera={camera} t={t} />}
       {flashKey > 0 && <div key={flashKey} className="fa-vf-flash" aria-hidden />}
     </div>
+  );
+}
+
+/** Zoom presets (1×, 2×, 3×) plus a slider for fine control. */
+function ZoomControls({ camera, t }: { camera: ReturnType<typeof useCamera>; t: (k: string) => string }) {
+  const { zoom, setZoom } = camera;
+  const presets = [1, 2, 3, 5].filter((p) => p >= zoom.min && p <= zoom.max);
+  const label = `${zoom.value.toFixed(zoom.value < 10 ? 1 : 0).replace(/\.0$/, '')}×`;
+  return (
+    <div className="fa-vf-zoom">
+      <div className="fa-vf-zoom-presets" role="group" aria-label={t('zoom')}>
+        {presets.map((p) => (
+          <button
+            key={p}
+            type="button"
+            className={`fa-vf-zoom-btn ${Math.abs(zoom.value - p) < 0.05 ? 'is-on' : ''}`}
+            onClick={() => void setZoom(p)}
+          >
+            {p}×
+          </button>
+        ))}
+      </div>
+      <input
+        className="fa-vf-zoom-slider"
+        type="range"
+        min={zoom.min}
+        max={zoom.max}
+        step={zoom.step}
+        value={zoom.value}
+        onChange={(e) => void setZoom(Number(e.target.value))}
+        aria-label={`${t('zoom')} ${label}`}
+      />
+      <span className="fa-vf-zoom-value" aria-hidden>{label}</span>
+    </div>
+  );
+}
+
+/** Two-finger pinch on the viewfinder changes the zoom. */
+function PinchZoom({ camera }: { camera: ReturnType<typeof useCamera> }) {
+  const start = useRef<{ dist: number; zoom: number } | null>(null);
+  const dist = (e: React.TouchEvent) => Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+  return (
+    <div
+      className="fa-vf-pinch"
+      onTouchStart={(e) => {
+        if (e.touches.length === 2) start.current = { dist: dist(e), zoom: camera.zoom.value };
+      }}
+      onTouchMove={(e) => {
+        if (e.touches.length === 2 && start.current) void camera.setZoom(start.current.zoom * (dist(e) / start.current.dist));
+      }}
+      onTouchEnd={() => (start.current = null)}
+    />
   );
 }
 
