@@ -890,6 +890,12 @@ admin.post('/sets/:id/ocr', requirePermission('sets.editPlate'), async (c) => {
     c.env.DB.prepare(`UPDATE jobs SET status = 'done', updated_at = ? WHERE kind = 'ocr' AND ref_id = ? AND status != 'done'`).bind(now, id),
     // Re-reading starts fresh: the previous automatic score no longer blocks a new result.
     c.env.DB.prepare(`UPDATE rounds SET plate_ocr_score = NULL, ocr_status = ? WHERE id = ?`).bind(target === 'local' ? 'waiting_local' : 'pending', id),
+    // An earlier UNSURE automatic plate (< 80 %, e.g. OCR noise "40 (ค)") is cleared, so a re-read
+    // that finds nothing shows "ไม่ระบุ" instead of keeping the junk. Hand-typed and sure plates stay.
+    c.env.DB.prepare(
+      `UPDATE rounds SET plate_text = NULL, plate_norm = NULL, plate_digits = NULL, plate_source = 'none', plate_confidence = NULL
+       WHERE id = ? AND plate_source = 'ocr' AND COALESCE(plate_confidence, 0) < 0.8`,
+    ).bind(id),
     ...imgs.map((img) =>
       c.env.DB.prepare(
         `INSERT INTO jobs (kind, ref_id, payload, status, attempts, next_run_at, created_at, updated_at) VALUES ('ocr', ?, ?, ?, 0, ?, ?, ?)`,

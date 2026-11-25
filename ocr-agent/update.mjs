@@ -32,7 +32,7 @@ function npmInstall() {
  * script restarts it), or null when already up to date / the update could not be completed.
  */
 export async function selfUpdate(server, currentVersion, log = console.log) {
-  const res = await fetch(`${server}/downloads/agent/manifest.json`, { cache: 'no-store' });
+  const res = await fetch(`${server}/downloads/agent/manifest.json?t=${Date.now()}`, { cache: 'no-store' });
   if (!res.ok) return null;
   const manifest = await res.json();
   if (!manifest?.version || !newer(manifest.version, currentVersion)) return null;
@@ -41,7 +41,7 @@ export async function selfUpdate(server, currentVersion, log = console.log) {
   const files = [];
   for (const f of manifest.files ?? []) {
     if (!UPDATABLE.has(f.path)) continue;
-    const r = await fetch(`${server}/downloads/agent/${f.path}`, { cache: 'no-store' });
+    const r = await fetch(`${server}/downloads/agent/${f.path}?v=${manifest.version}`, { cache: 'no-store' });
     if (!r.ok) throw new Error(`download ${f.path} → ${r.status}`);
     const buf = Buffer.from(await r.arrayBuffer());
     if (sha256(buf) !== f.sha256) throw new Error(`ไฟล์ ${f.path} เสียระหว่างดาวน์โหลด`);

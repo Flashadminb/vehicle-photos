@@ -87,4 +87,17 @@ describe('capture profiles (รูปแบบการถ่าย)', () => {
     expect((await admin.json('GET', `/api/admin/sets?status=all&plate=unsure&operatorId=${op.user.id}`)).body.total).toBe(1);
     expect((await admin.json('GET', '/api/admin/sets?plate=bogus')).status).toBe(400);
   });
+
+  it('re-reading clears an unsure automatic plate but keeps sure and hand-typed ones', async () => {
+    const { client: admin } = await loggedIn('admin', 'super_admin');
+    await admin.json('PUT', '/api/admin/settings', { ocrProvider: 'local' });
+    const op = await loggedIn('field', 'operator');
+    const { roundId } = await captureWithBootstrap(op.client);
+    await testEnv.DB.prepare(`UPDATE rounds SET status = 'finalized', plate_text = '40 (ค)', plate_source = 'ocr', plate_confidence = 0.75 WHERE id = ?`).bind(roundId).run();
+    await admin.json('POST', `/api/admin/sets/${roundId}/ocr`, { target: 'local', bulk: true });
+    expect((await testEnv.DB.prepare(`SELECT plate_text FROM rounds WHERE id = ?`).bind(roundId).first<any>()).plate_text).toBeNull();
+    await testEnv.DB.prepare(`UPDATE rounds SET plate_text = '70-1234 (ชลบุรี)', plate_source = 'ocr', plate_confidence = 0.9 WHERE id = ?`).bind(roundId).run();
+    await admin.json('POST', `/api/admin/sets/${roundId}/ocr`, { target: 'local', bulk: true });
+    expect((await testEnv.DB.prepare(`SELECT plate_text FROM rounds WHERE id = ?`).bind(roundId).first<any>()).plate_text).toBe('70-1234 (ชลบุรี)');
+  });
 });
