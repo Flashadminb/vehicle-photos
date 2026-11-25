@@ -330,6 +330,14 @@ export function OcrPage() {
           <li>(ไม่บังคับ) ให้เปิดอัตโนมัติตอนเปิดคอม: กด Win+R พิมพ์ <code>shell:startup</code> แล้ววาง shortcut ของ start-windows.bat</li>
           <li>ทดสอบความแม่นกับรูปของคุณ: เปิด Command Prompt ในโฟลเดอร์ แล้วพิมพ์ <code>node test-image.mjs โฟลเดอร์รูป</code> (ตั้งชื่อไฟล์เป็นทะเบียนจริง เช่น <code>กข1234.jpg</code> จะได้คะแนนความแม่น)</li>
         </ol>
+        <h3>Mac</h3>
+        <ol className="small policy">
+          <li>กด “+ เพิ่มเครื่อง และดาวน์โหลดโปรแกรม” แล้วดับเบิลคลิกไฟล์ zip ที่ได้ (Mac จะแตกไฟล์ให้เอง)</li>
+          <li>ดับเบิลคลิก <code>start-mac.command</code> — ครั้งแรก macOS อาจบอกว่าเปิดไม่ได้ ให้<strong>คลิกขวาที่ไฟล์ → Open → Open</strong> (ครั้งเดียว)</li>
+          <li>ถ้ายังไม่มี Node.js จะเปิดหน้า nodejs.org ให้ติดตั้งแบบ LTS (.pkg) แล้วดับเบิลคลิก <code>start-mac.command</code> ใหม่</li>
+          <li>เปิดหน้าต่าง Terminal ทิ้งไว้ (ย่อได้) โปรแกรมกัน Mac หลับให้เองระหว่างทำงาน</li>
+          <li>(ไม่บังคับ) เปิดเองตอนล็อกอิน: System Settings → General → Login Items → กด + แล้วเลือก <code>start-mac.command</code></li>
+        </ol>
       </section>
     </div>
   );
