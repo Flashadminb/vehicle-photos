@@ -1,14 +1,57 @@
 // Vehicle Photos — Local OCR computer.
 // Asks the server for plate photos, reads them here (OpenCV + Tesseract), sends back the result.
 // Run on as many computers as you like: whichever is switched on takes the next plate.
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { createInterface } from 'node:readline';
 import { hostname } from 'node:os';
 import { readPlate, shutdown } from './plate.mjs';
 
 const VERSION = '1.0.0';
 const cfgFile = new URL('./config.json', import.meta.url);
-const cfg = existsSync(cfgFile) ? JSON.parse(await readFile(cfgFile, 'utf8')) : {};
+const exampleFile = new URL('./config.example.json', import.meta.url);
+
+/** First run without config.json: ask for the token here and create the file. */
+async function firstRunSetup() {
+  const example = existsSync(exampleFile) ? JSON.parse(await readFile(exampleFile, 'utf8')) : {};
+  const server = (process.env.VP_SERVER || example.server || '').replace(/\/$/, '');
+  console.log('=== ตั้งค่าครั้งแรก / First-time setup ===');
+  console.log('ในแดชบอร์ด: เมนู "อ่านป้ายทะเบียน (OCR)" -> + เพิ่มเครื่อง -> คัดลอก token (ขึ้นต้นด้วย vpa_)');
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  rl.setPrompt('วาง token แล้วกด Enter (คลิกขวาเพื่อวาง) / Paste token: ');
+  rl.prompt();
+  // Read line by line so a pasted multi-line block (the whole config from the dashboard) works too.
+  for await (const line of rl) {
+    const text = line.trim();
+    const token = /"token"\s*:\s*"([^"]+)"/.exec(text)?.[1] ?? (/^"?vpa_/.test(text) ? text.replace(/^"|"[,]?$/g, '') : null);
+    if (!token) {
+      // Other lines of a pasted JSON block ({, "server": …, }) are simply skipped.
+      if (text && !/^[{}]|"server"|"minConfidence"/.test(text)) console.log('token ไม่ถูกต้อง ต้องขึ้นต้นด้วย vpa_ ลองใหม่');
+      if (!/^[{}]|"server"|"minConfidence"/.test(text)) rl.prompt();
+      continue;
+    }
+    const res = await fetch(`${server}/api/ocr-agent/ping`, { headers: { Authorization: `Bearer ${token}` } }).catch((e) => ({ ok: false, status: e.message }));
+    if (!res.ok) {
+      console.log(`เชื่อมต่อไม่สำเร็จ (${res.status}) — ตรวจว่าคัดลอก token ครบ และเครื่องนี้ไม่ได้ถูกลบในแดชบอร์ด`);
+      rl.prompt();
+      continue;
+    }
+    const { name } = await res.json();
+    const cfg = { server, token, minConfidence: example.minConfidence ?? 0.6 };
+    await writeFile(cfgFile, JSON.stringify(cfg, null, 2));
+    console.log(`บันทึก config.json แล้ว — เครื่องนี้คือ "${name}"\n`);
+    rl.close();
+    return cfg;
+  }
+  console.log('ยกเลิกการตั้งค่า');
+  process.exit(1);
+}
+
+const cfg = existsSync(cfgFile)
+  ? JSON.parse((await readFile(cfgFile, 'utf8')).replace(/^\uFEFF/, ''))
+  : process.stdin.isTTY
+    ? await firstRunSetup()
+    : {};
 const SERVER = (process.env.VP_SERVER || cfg.server || '').replace(/\/$/, '');
 const TOKEN = process.env.VP_TOKEN || cfg.token || '';
 // Below this confidence the plate is not filled in (it stays "ไม่ระบุ" for an admin to check).

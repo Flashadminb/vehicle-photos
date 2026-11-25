@@ -35,6 +35,9 @@ agent.use('/*', async (c, next) => {
   await next();
 });
 
+/** Used by the first-run setup to check a token (also counts as a heartbeat). */
+agent.get('/ping', (c) => c.json({ ok: true, name: c.get('agent').name }));
+
 /** Ask for the next plate. Returns { job: null } when there is nothing to do. */
 agent.post('/poll', async (c) => {
   const settings = await getSettings(c.env);

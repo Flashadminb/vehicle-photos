@@ -304,8 +304,8 @@ export function OcrPage() {
           <li>
             ดาวน์โหลดโปรแกรม: <a className="btn btn-sm" href="/downloads/ocr-agent.zip">⬇ ocr-agent.zip</a> แล้วแตกไฟล์ไว้ในโฟลเดอร์ เช่น <code>C:\ocr-agent</code>
           </li>
-          <li>กด “+ เพิ่มเครื่อง” ด้านบน แล้วสร้างไฟล์ <code>config.json</code> ในโฟลเดอร์นั้น วางข้อความที่ได้</li>
-          <li>ดับเบิลคลิก <code>start-windows.bat</code> ครั้งแรกจะติดตั้งประมาณ 1–3 นาที เมื่อขึ้น “พร้อมทำงาน” สถานะเครื่องในหน้านี้จะเป็น “เปิดอยู่”</li>
+          <li>กด “+ เพิ่มเครื่อง” ด้านบน แล้วกด <strong>คัดลอก</strong></li>
+          <li>ดับเบิลคลิก <code>start-windows.bat</code> → ครั้งแรกจะถามหา token ให้<strong>คลิกขวาในหน้าต่างดำเพื่อวาง</strong> แล้วกด Enter (โปรแกรมสร้าง config.json ให้เอง) → ติดตั้งประมาณ 1–3 นาที เมื่อขึ้น “พร้อมทำงาน” สถานะเครื่องในหน้านี้จะเป็น “เปิดอยู่”</li>
           <li>(ไม่บังคับ) ให้เปิดอัตโนมัติตอนเปิดคอม: กด Win+R พิมพ์ <code>shell:startup</code> แล้ววาง shortcut ของ start-windows.bat</li>
           <li>ทดสอบความแม่นกับรูปของคุณ: เปิด Command Prompt ในโฟลเดอร์ แล้วพิมพ์ <code>node test-image.mjs โฟลเดอร์รูป</code> (ตั้งชื่อไฟล์เป็นทะเบียนจริง เช่น <code>กข1234.jpg</code> จะได้คะแนนความแม่น)</li>
         </ol>
