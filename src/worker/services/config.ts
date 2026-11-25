@@ -63,12 +63,29 @@ export async function saveSettings(env: Env, settings: AppSettings, actorId: str
     .run();
 }
 
-function rowToWorkflow(r: { id: number; steps: string; note: string | null; created_at: number }): WorkflowVersion {
-  return { id: r.id, steps: JSON.parse(r.steps), note: r.note, createdAt: r.created_at };
+function rowToWorkflow(r: { id: number; steps: string; note: string | null; created_at: number; workflow_id?: string }): WorkflowVersion {
+  return { id: r.id, workflowId: r.workflow_id ?? 'default', steps: JSON.parse(r.steps), note: r.note, createdAt: r.created_at };
 }
 
-export async function getCurrentWorkflow(env: Env): Promise<WorkflowVersion> {
-  const r = await env.DB.prepare(`SELECT * FROM workflow_versions ORDER BY id DESC LIMIT 1`).first<any>();
+export async function listProfiles(env: Env) {
+  const { results } = await env.DB.prepare(
+    `SELECT w.id, w.name, w.sort,
+       (SELECT COUNT(*) FROM users u WHERE COALESCE(u.workflow_id, 'default') = w.id AND u.disabled = 0) AS user_count,
+       (SELECT MAX(v.id) FROM workflow_versions v WHERE v.workflow_id = w.id) AS current_version
+     FROM workflows w WHERE w.archived_at IS NULL ORDER BY w.sort, w.created_at`,
+  ).all<{ id: string; name: string; sort: number; user_count: number; current_version: number | null }>();
+  return results;
+}
+
+export async function profileExists(env: Env, id: string) {
+  return !!(await env.DB.prepare(`SELECT 1 FROM workflows WHERE id = ? AND archived_at IS NULL`).bind(id).first());
+}
+
+/** The latest version of a profile (falls back to the default profile if it has none yet). */
+export async function getCurrentWorkflow(env: Env, workflowId = 'default'): Promise<WorkflowVersion> {
+  const r =
+    (await env.DB.prepare(`SELECT * FROM workflow_versions WHERE workflow_id = ? ORDER BY id DESC LIMIT 1`).bind(workflowId).first<any>()) ??
+    (await env.DB.prepare(`SELECT * FROM workflow_versions WHERE workflow_id = 'default' ORDER BY id DESC LIMIT 1`).first<any>());
   if (!r) throw new Error('No workflow configured');
   return rowToWorkflow(r);
 }
@@ -78,13 +95,13 @@ export async function getWorkflow(env: Env, id: number): Promise<WorkflowVersion
   return r ? rowToWorkflow(r) : null;
 }
 
-export async function listWorkflowVersions(env: Env, limit = 20) {
+export async function listWorkflowVersions(env: Env, limit = 20, workflowId = 'default') {
   const { results } = await env.DB.prepare(
     `SELECT w.id, w.note, w.created_at, u.display_name AS created_by_name,
             (SELECT COUNT(*) FROM rounds r WHERE r.workflow_version_id = w.id) AS round_count
-     FROM workflow_versions w LEFT JOIN users u ON u.id = w.created_by ORDER BY w.id DESC LIMIT ?`,
+     FROM workflow_versions w LEFT JOIN users u ON u.id = w.created_by WHERE w.workflow_id = ? ORDER BY w.id DESC LIMIT ?`,
   )
-    .bind(limit)
+    .bind(workflowId, limit)
     .all();
   return results;
 }
@@ -114,11 +131,11 @@ export function validateSteps(steps: unknown, languages: string[]): WorkflowStep
   return out;
 }
 
-export async function publishWorkflow(env: Env, steps: WorkflowStep[], note: string, actorId: string, now: number) {
+export async function publishWorkflow(env: Env, steps: WorkflowStep[], note: string, actorId: string, now: number, workflowId = 'default') {
   const r = await env.DB.prepare(
-    `INSERT INTO workflow_versions (steps, note, created_at, created_by) VALUES (?, ?, ?, ?) RETURNING id`,
+    `INSERT INTO workflow_versions (steps, note, created_at, created_by, workflow_id) VALUES (?, ?, ?, ?, ?) RETURNING id`,
   )
-    .bind(JSON.stringify(steps), note || null, now, actorId)
+    .bind(JSON.stringify(steps), note || null, now, actorId, workflowId)
     .first<{ id: number }>();
   return r!.id;
 }

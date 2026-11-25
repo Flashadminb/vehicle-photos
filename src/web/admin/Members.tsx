@@ -16,10 +16,16 @@ export function Members() {
   const me = useMe();
   const [users, setUsers] = useState<any[]>([]);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [form, setForm] = useState({ username: '', displayName: '', role: 'operator' as Role });
+  const [form, setForm] = useState({ username: '', displayName: '', role: 'operator' as Role, workflowId: 'default' });
+  const [profiles, setProfiles] = useState<{ id: string; name: string }[]>([]);
 
   const load = () => api<{ users: any[] }>('GET', '/api/admin/users').then((r) => setUsers(r.users), (e) => setMsg({ ok: false, text: e.message }));
-  useEffect(() => void load(), []);
+  useEffect(() => {
+    void load();
+    api<{ profiles: { id: string; name: string }[] }>('GET', '/api/admin/workflows').then((r) => setProfiles(r.profiles), () => undefined);
+  }, []);
+  /** Roles that use the field app (and so a capture profile). */
+  const capturing = (role: Role) => role !== 'reviewer';
 
   async function run(fn: () => Promise<any>, ok: (r: any) => string) {
     setMsg(null);
@@ -55,7 +61,7 @@ export function Members() {
               () => api('POST', '/api/admin/users', form),
               (r) => `สร้าง ${form.username} แล้ว รหัสผ่านชั่วคราว: ${r.temporaryPassword} — ส่งให้เจ้าตัวแบบส่วนตัว และต้องเปลี่ยนรหัสเมื่อเข้าระบบครั้งแรก`,
             );
-            setForm({ username: '', displayName: '', role: 'operator' });
+            setForm({ username: '', displayName: '', role: 'operator', workflowId: form.workflowId });
           }}
         >
           <label className="field">
@@ -76,6 +82,18 @@ export function Members() {
               ))}
             </select>
           </label>
+          {profiles.length > 1 && capturing(form.role) && (
+            <label className="field">
+              <span>รูปแบบการถ่าย</span>
+              <select className="input" value={form.workflowId} onChange={(e) => setForm({ ...form, workflowId: e.target.value })}>
+                {profiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <div className="field">
             <span>&nbsp;</span>
             <button className="btn btn-primary">สร้างสมาชิก</button>
@@ -91,6 +109,7 @@ export function Members() {
               <tr>
                 <th>สมาชิก</th>
                 <th>บทบาท</th>
+                {profiles.length > 1 && <th>รูปแบบการถ่าย</th>}
                 <th>สถานะ</th>
                 <th>ใช้งานล่าสุด</th>
                 <th>การจัดการ</th>
@@ -118,6 +137,33 @@ export function Members() {
                         ROLE_LABEL[u.role as Role]
                       )}
                     </td>
+                    {profiles.length > 1 && (
+                      <td>
+                        {!capturing(u.role) ? (
+                          <span className="muted">—</span>
+                        ) : canManage(u.role) ? (
+                          <select
+                            className="input input-sm"
+                            value={u.workflow_id ?? 'default'}
+                            onChange={(e) =>
+                              void run(
+                                () => api('PATCH', `/api/admin/users/${u.id}`, { workflowId: e.target.value }),
+                                () => `${u.display_name} ใช้รูปแบบ “${profiles.find((p) => p.id === e.target.value)?.name}” แล้ว (มีผลกับรอบถัดไป หลังเปิดแอปใหม่)`,
+                              )
+                            }
+                            aria-label={`รูปแบบการถ่ายของ ${u.username}`}
+                          >
+                            {profiles.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.name}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          profiles.find((p) => p.id === u.workflow_id)?.name ?? 'ทั่วไป'
+                        )}
+                      </td>
+                    )}
                     <td>
                       <div className="pills">
                         {u.disabled ? <span className="pill pill-bad">ปิดใช้งาน</span> : <span className="pill pill-ok">ใช้งานอยู่</span>}

@@ -18,6 +18,8 @@ import { hashPassword, verifyPassword } from '../crypto';
 import { ApiError, badRequest, clientIp, forbidden, int, notFound, randomToken, readJson, sha256Hex, str, uuid } from '../util';
 import {
   getCurrentWorkflow,
+  listProfiles,
+  profileExists,
   getWorkflow,
   getLanguages,
   getSettings,
@@ -120,6 +122,8 @@ function parseHistoryQuery(q: Record<string, string>): HistoryQuery {
     }
   }
   if (q.q) out.q = q.q;
+  if (q.workflowId) out.workflowId = str(q.workflowId, 'workflowId', { max: 40 });
+  if (q.operatorId) out.operatorId = str(q.operatorId, 'operatorId', { max: 64 });
   if (q.status) {
     if (!['finalized', 'open', 'abandoned', 'all'].includes(q.status)) throw badRequest('Invalid status filter.');
     out.status = q.status as HistoryQuery['status'];
@@ -335,7 +339,56 @@ admin.put('/settings', requirePermission('config.edit'), async (c) => {
 
 // ---------- Workflow (versioned) ----------
 admin.get('/workflow', requirePermission('config.edit'), async (c) => {
-  return c.json({ current: await getCurrentWorkflow(c.env), versions: await listWorkflowVersions(c.env) });
+  const workflowId = c.req.query('workflowId') || 'default';
+  if (!(await profileExists(c.env, workflowId))) throw notFound('ไม่พบรูปแบบการถ่ายนี้');
+  return c.json({ current: await getCurrentWorkflow(c.env, workflowId), versions: await listWorkflowVersions(c.env, 20, workflowId), workflowId });
+});
+
+// ---------- Capture profiles ("รูปแบบการถ่าย") ----------
+/** Profiles are visible to anyone who can see history (for the filter); editing needs config.edit. */
+admin.get('/workflows', requirePermission('sets.view'), async (c) => c.json({ profiles: await listProfiles(c.env) }));
+
+/** New profile, starting from a copy of another profile's current steps. */
+admin.post('/workflows', requirePermission('config.edit'), async (c) => {
+  const { name, copyFrom } = await readJson<{ name: string; copyFrom?: string }>(c);
+  const n = str(name, 'name', { min: 1, max: 40 });
+  const id = `wf_${randomToken(6).toLowerCase().replace(/[^a-z0-9]/g, 'x')}`;
+  const now = Date.now();
+  const src = await getCurrentWorkflow(c.env, copyFrom && (await profileExists(c.env, copyFrom)) ? copyFrom : 'default');
+  const max = await c.env.DB.prepare(`SELECT COALESCE(MAX(sort), 0) AS m FROM workflows`).first<{ m: number }>();
+  await c.env.DB.prepare(`INSERT INTO workflows (id, name, sort, created_at) VALUES (?, ?, ?, ?)`).bind(id, n, (max?.m ?? 0) + 1, now).run();
+  await publishWorkflow(c.env, src.steps, `สร้างจาก ${src.workflowId}`, c.get('user').id, now, id);
+  await audit(c.env, c.get('user'), 'workflow_profile.created', { type: 'workflow', id }, { name: n }, clientIp(c), now);
+  return c.json({ id });
+});
+
+admin.patch('/workflows/:id', requirePermission('config.edit'), async (c) => {
+  const id = c.req.param('id');
+  const { name } = await readJson<{ name: string }>(c);
+  if (!(await profileExists(c.env, id))) throw notFound('ไม่พบรูปแบบการถ่ายนี้');
+  await c.env.DB.prepare(`UPDATE workflows SET name = ? WHERE id = ?`).bind(str(name, 'name', { min: 1, max: 40 }), id).run();
+  await audit(c.env, c.get('user'), 'workflow_profile.renamed', { type: 'workflow', id }, { name }, clientIp(c));
+  return c.json({ ok: true });
+});
+
+/** Archive a profile (its sets keep their history). Users must be moved off it first. */
+admin.delete('/workflows/:id', requirePermission('config.edit'), async (c) => {
+  const id = c.req.param('id');
+  if (id === 'default') throw badRequest('ลบรูปแบบหลักไม่ได้');
+  const n = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM users WHERE workflow_id = ? AND disabled = 0`).bind(id).first<{ n: number }>();
+  if ((n?.n ?? 0) > 0) throw badRequest(`ยังมีผู้ใช้ ${n!.n} คนใช้รูปแบบนี้ ย้ายไปรูปแบบอื่นก่อน`);
+  await c.env.DB.prepare(`UPDATE workflows SET archived_at = ? WHERE id = ?`).bind(Date.now(), id).run();
+  await audit(c.env, c.get('user'), 'workflow_profile.archived', { type: 'workflow', id }, undefined, clientIp(c));
+  return c.json({ ok: true });
+});
+
+/** People who take photos, for the history "ผู้ถ่าย" filter. */
+admin.get('/operators', requirePermission('sets.view'), async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, display_name, username, COALESCE(workflow_id, 'default') AS workflow_id FROM users
+     WHERE role IN ('operator', 'admin', 'super_admin') ORDER BY disabled, display_name LIMIT 1000`,
+  ).all();
+  return c.json({ operators: results });
 });
 
 /**
@@ -343,11 +396,12 @@ admin.get('/workflow', requirePermission('config.edit'), async (c) => {
  * version they started with; only rounds started afterwards use the new one.
  */
 admin.post('/workflow', requirePermission('config.edit'), async (c) => {
-  const { steps, note } = await readJson<{ steps: unknown; note?: string }>(c);
+  const { steps, note, workflowId = 'default' } = await readJson<{ steps: unknown; note?: string; workflowId?: string }>(c);
+  if (!(await profileExists(c.env, workflowId))) throw notFound('ไม่พบรูปแบบการถ่ายนี้');
   const langs = (await getLanguages(c.env)).map((l) => l.code);
   const valid = validateSteps(steps, langs);
-  const id = await publishWorkflow(c.env, valid, String(note ?? '').slice(0, 200), c.get('user').id, Date.now());
-  await audit(c.env, c.get('user'), 'workflow.published', { type: 'workflow', id: String(id) }, { steps: valid.map((s) => s.id) }, clientIp(c));
+  const id = await publishWorkflow(c.env, valid, String(note ?? '').slice(0, 200), c.get('user').id, Date.now(), workflowId);
+  await audit(c.env, c.get('user'), 'workflow.published', { type: 'workflow', id: String(id) }, { workflowId, steps: valid.map((s) => s.id) }, clientIp(c));
   return c.json({ id });
 });
 
@@ -431,6 +485,7 @@ const ONLINE_WINDOW_MS = 11 * 60_000;
 admin.get('/users', requirePermission('users.manage'), async (c) => {
   const { results } = await c.env.DB.prepare(
     `SELECT u.id, u.username, u.display_name, u.role, u.disabled, u.must_change_password, u.language, u.created_at,
+       COALESCE(u.workflow_id, 'default') AS workflow_id,
        (u.pin_hash IS NOT NULL) AS has_pin,
        (SELECT MAX(last_seen_at) FROM sessions s WHERE s.user_id = u.id) AS last_seen_at,
        (SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id AND s.revoked_at IS NULL AND s.expires_at > ?1) AS active_sessions,
@@ -443,7 +498,9 @@ admin.get('/users', requirePermission('users.manage'), async (c) => {
 });
 
 admin.post('/users', requirePermission('users.manage'), async (c) => {
-  const body = await readJson<{ username: string; displayName: string; role: Role; password?: string }>(c);
+  const body = await readJson<{ username: string; displayName: string; role: Role; password?: string; workflowId?: string }>(c);
+  const wfId = body.workflowId && body.workflowId !== 'default' && body.role !== 'reviewer' ? body.workflowId : null;
+  if (wfId && !(await profileExists(c.env, wfId))) throw badRequest('ไม่พบรูปแบบการถ่ายนี้');
   const actor = c.get('user');
   const username = str(body.username, 'username', { min: 3, max: 40 });
   if (!/^[a-zA-Z0-9._-]+$/.test(username)) throw badRequest('Username may contain letters, digits, dot, dash and underscore.');
@@ -455,10 +512,10 @@ admin.post('/users', requirePermission('users.manage'), async (c) => {
   const id = uuid();
   try {
     await c.env.DB.prepare(
-      `INSERT INTO users (id, username, display_name, role, password_hash, disabled, must_change_password, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 0, 1, ?, ?)`,
+      `INSERT INTO users (id, username, display_name, role, password_hash, disabled, must_change_password, created_at, updated_at, workflow_id)
+       VALUES (?, ?, ?, ?, ?, 0, 1, ?, ?, ?)`,
     )
-      .bind(id, username, str(body.displayName, 'displayName', { max: 80 }), body.role, await createPasswordHash(c.env, password), now, now)
+      .bind(id, username, str(body.displayName, 'displayName', { max: 80 }), body.role, await createPasswordHash(c.env, password), now, now, wfId)
       .run();
   } catch (e) {
     if (String(e).includes('UNIQUE')) throw new ApiError(409, 'username_taken', 'ชื่อผู้ใช้นี้ถูกใช้แล้ว');
@@ -471,8 +528,9 @@ admin.post('/users', requirePermission('users.manage'), async (c) => {
 admin.patch('/users/:id', requirePermission('users.manage'), async (c) => {
   const actor = c.get('user');
   const id = c.req.param('id');
-  const body = await readJson<{ displayName?: string; role?: Role; disabled?: boolean }>(c);
+  const body = await readJson<{ displayName?: string; role?: Role; disabled?: boolean; workflowId?: string }>(c);
   const target = await c.env.DB.prepare(`SELECT * FROM users WHERE id = ?`).bind(id).first<any>();
+  if (body.workflowId != null && !(await profileExists(c.env, body.workflowId))) throw badRequest('ไม่พบรูปแบบการถ่ายนี้');
   if (!target) throw notFound('User not found.');
   if (body.role && !ROLES.includes(body.role)) throw badRequest('Invalid role.');
   assertCanManage(actor, target.role, body.role);
@@ -485,9 +543,19 @@ admin.patch('/users/:id', requirePermission('users.manage'), async (c) => {
   }
   const now = Date.now();
   await c.env.DB.prepare(
-    `UPDATE users SET display_name = COALESCE(?, display_name), role = COALESCE(?, role), disabled = COALESCE(?, disabled), updated_at = ? WHERE id = ?`,
+    `UPDATE users SET display_name = COALESCE(?, display_name), role = COALESCE(?, role), disabled = COALESCE(?, disabled),
+       workflow_id = CASE WHEN ? IS NULL THEN workflow_id WHEN ? = 'default' THEN NULL ELSE ? END, updated_at = ? WHERE id = ?`,
   )
-    .bind(body.displayName ? str(body.displayName, 'displayName', { max: 80 }) : null, body.role ?? null, body.disabled == null ? null : body.disabled ? 1 : 0, now, id)
+    .bind(
+      body.displayName ? str(body.displayName, 'displayName', { max: 80 }) : null,
+      body.role ?? null,
+      body.disabled == null ? null : body.disabled ? 1 : 0,
+      body.workflowId ?? null,
+      body.workflowId ?? null,
+      body.workflowId ?? null,
+      now,
+      id,
+    )
     .run();
   // Disabling or changing the role ends existing sessions immediately.
   if (body.disabled || (body.role && body.role !== target.role)) await revokeUserSessions(c.env, id, now);

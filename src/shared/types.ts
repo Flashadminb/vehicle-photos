@@ -46,8 +46,17 @@ export function stepGuide(s: { ocr: boolean; ocrKind?: 'plate' | 'document'; gui
   return g === 'none' ? null : g;
 }
 
+/** A capture profile ("รูปแบบการถ่าย"), e.g. field team vs. gate guards. */
+export interface WorkflowProfile {
+  id: string;
+  name: string;
+  sort: number;
+}
+
 export interface WorkflowVersion {
   id: number;
+  /** The capture profile this version belongs to ('default' = the original one). */
+  workflowId?: string;
   steps: WorkflowStep[];
   note?: string | null;
   createdAt: number;
@@ -226,6 +235,8 @@ export interface SetRow {
   /** Photos moved to the Drive trash (Free up space). Metadata stays. */
   driveTrashed: boolean;
   imagesAllowed: boolean;
+  /** Capture profile the set was taken with. */
+  workflowId?: string;
 }
 
 export interface SetListResponse {

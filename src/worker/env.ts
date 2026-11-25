@@ -35,4 +35,6 @@ export interface AuthUser {
   language: string | null;
   hasPin: boolean;
   mustChangePassword: boolean;
+  /** Assigned capture profile (null = default). */
+  workflowId?: string | null;
 }

@@ -117,6 +117,7 @@ export function toAuthUser(row: any): AuthUser {
     language: row.language ?? null,
     hasPin: !!row.pin_hash,
     mustChangePassword: !!row.must_change_password,
+    workflowId: row.workflow_id ?? null,
   };
 }
 

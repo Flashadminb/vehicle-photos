@@ -21,6 +21,15 @@ export function History() {
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('finalized');
   const [visibility, setVisibility] = useState('normal');
+  /** Filters: capture profile ("รูปแบบการถ่าย") and the person who took the set. */
+  const [workflowId, setWorkflowId] = useState('');
+  const [operatorId, setOperatorId] = useState('');
+  const [profiles, setProfiles] = useState<{ id: string; name: string }[]>([]);
+  const [operators, setOperators] = useState<{ id: string; display_name: string; username: string; workflow_id: string }[]>([]);
+  useEffect(() => {
+    api<{ profiles: { id: string; name: string }[] }>('GET', '/api/admin/workflows').then((r) => setProfiles(r.profiles), () => undefined);
+    api<{ operators: any[] }>('GET', '/api/admin/operators').then((r) => setOperators(r.operators), () => undefined);
+  }, []);
   const [pageSize, setPageSize] = useState(20);
   const [sort, setSort] = useState<'newest' | 'oldest'>('newest');
   const [data, setData] = useState<SetListResponse | null>(null);
@@ -57,6 +66,8 @@ export function History() {
         params.set('endTime', endTime);
       }
       if (q.trim()) params.set('q', q.trim());
+      if (workflowId) params.set('workflowId', workflowId);
+      if (operatorId) params.set('operatorId', operatorId);
       if (cursor) params.set('cursor', cursor);
       try {
         const res = await api<SetListResponse>('GET', `/api/admin/sets?${params}`);
@@ -71,7 +82,7 @@ export function History() {
         if (id === reqId.current) setLoading(false);
       }
     },
-    [pageSize, status, visibility, sort, range, startTime, endTime, q, timeError],
+    [pageSize, status, visibility, sort, range, startTime, endTime, q, timeError, workflowId, operatorId],
   );
 
   // Any filter change restarts at the first page (debounced for typing).
@@ -99,6 +110,8 @@ export function History() {
         params.set('endTime', endTime);
       }
       if (q.trim()) params.set('q', q.trim());
+      if (workflowId) params.set('workflowId', workflowId);
+      if (operatorId) params.set('operatorId', operatorId);
       if (cursor) params.set('cursor', cursor);
       const res: SetListResponse = await api<SetListResponse>('GET', `/api/admin/sets?${params}`);
       ids.push(...res.rows.map((r) => r.id));
@@ -154,6 +167,32 @@ export function History() {
         <label className="field grow">
           <span>ค้นหาทะเบียน ผู้ถ่าย หรือรหัสชุด</span>
           <input className="input" type="search" placeholder="เช่น กข 1234, 1234, PF-000123, สมชาย" value={q} onChange={(e) => setQ(e.target.value)} />
+        </label>
+        {profiles.length > 1 && (
+          <label className="field">
+            <span>รูปแบบการถ่าย</span>
+            <select className="input" value={workflowId} onChange={(e) => { setWorkflowId(e.target.value); setOperatorId(''); }}>
+              <option value="">ทุกรูปแบบ</option>
+              {profiles.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <label className="field">
+          <span>ผู้ถ่าย (ไอดี)</span>
+          <select className="input" value={operatorId} onChange={(e) => setOperatorId(e.target.value)}>
+            <option value="">ทุกคน</option>
+            {operators
+              .filter((o) => !workflowId || o.workflow_id === workflowId)
+              .map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.display_name} ({o.username})
+                </option>
+              ))}
+          </select>
         </label>
         <label className="field">
           <span>สถานะ</span>
@@ -285,6 +324,7 @@ export function History() {
                   onView={() => setViewing(r.id)}
                   onDetails={() => setDetails(r.id)}
                   onDelete={me.can('sets.remove') ? () => setDeleting([r.id]) : undefined}
+                  profileName={profiles.length > 1 ? profiles.find((p) => p.id === r.workflowId)?.name : undefined}
                 />
               ))}
               {!loading && rows.length === 0 && (
@@ -322,7 +362,7 @@ function storageLabel(r: SetRow) {
   return <div className="pills">{pills}</div>;
 }
 
-function Row({ r, checked, onCheck, onView, onDetails, onDelete }: { r: SetRow; checked: boolean; onCheck: () => void; onView: () => void; onDetails: () => void; onDelete?: () => void }) {
+function Row({ r, checked, onCheck, onView, onDetails, onDelete, profileName }: { r: SetRow; checked: boolean; onCheck: () => void; onView: () => void; onDetails: () => void; onDelete?: () => void; profileName?: string }) {
   const complete = r.activeCount >= r.requiredCount;
   return (
     <tr className={checked ? 'is-selected' : ''}>
@@ -335,7 +375,10 @@ function Row({ r, checked, onCheck, onView, onDetails, onDelete }: { r: SetRow; 
         {r.plate ? <strong>{r.plate}</strong> : <span className="muted">{r.plateDisplay}</span>}
         {r.plateSource === 'manual' && <span className="pill pill-info tiny" title="แก้ไขโดยผู้ดูแล">แก้ไขแล้ว</span>}
       </td>
-      <td>{r.operator.name}</td>
+      <td>
+        {r.operator.name}
+        {profileName && <div className="small muted">{profileName}</div>}
+      </td>
       <td className="nowrap">
         <span className={`pill ${complete ? 'pill-ok' : 'pill-warn'}`}>
           {r.activeCount} / {r.requiredCount}

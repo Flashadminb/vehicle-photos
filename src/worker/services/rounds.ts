@@ -90,8 +90,8 @@ export async function beginImage(
     const root = effectiveRoot(env, settings.driveRootFolderId);
     await env.DB.prepare(
       `INSERT INTO rounds (id, seq, public_id, client_round_id, operator_id, workflow_version_id, started_at, started_at_source,
-         created_at, op_date, status, required_count, unknown_label, drive_root_folder_id, ocr_status, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)
+         created_at, op_date, status, required_count, unknown_label, drive_root_folder_id, ocr_status, updated_at, workflow_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?)
        ON CONFLICT(client_round_id) DO NOTHING`,
     )
       .bind(
@@ -110,6 +110,7 @@ export async function beginImage(
         root,
         settings.ocrProvider === 'none' ? 'disabled' : 'none',
         now,
+        workflow.workflowId ?? 'default',
       )
       .run();
     round = await env.DB.prepare(`SELECT * FROM rounds WHERE client_round_id = ?`).bind(input.clientRoundId).first<any>();

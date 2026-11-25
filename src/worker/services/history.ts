@@ -18,6 +18,10 @@ export interface HistoryQuery {
   cursor?: string | null;
   direction?: 'next' | 'prev' | 'first' | 'last';
   sort?: 'newest' | 'oldest';
+  /** Only sets of this capture profile. */
+  workflowId?: string;
+  /** Only sets taken by this user. */
+  operatorId?: string;
 }
 
 /**
@@ -73,6 +77,14 @@ export function buildWhere(user: AuthUser, q: HistoryQuery): { sql: string; bind
     where.push('r.removed_at IS NOT NULL');
   } else {
     if (!can(user.role, 'sets.viewRemoved')) throw forbidden();
+  }
+  if (q.workflowId) {
+    where.push('r.workflow_id = ?');
+    binds.push(q.workflowId);
+  }
+  if (q.operatorId) {
+    where.push('r.operator_id = ?');
+    binds.push(q.operatorId);
   }
   const text = (q.q ?? '').trim();
   if (text) {
@@ -189,6 +201,7 @@ export function toSetRow(r: any, settings: AppSettings, drive: Pick<DriveClient,
     hidden: !!r.hidden_at,
     removed: !!r.removed_at,
     driveTrashed: !!r.drive_trashed_at,
+    workflowId: r.workflow_id ?? 'default',
     imagesAllowed: !r.drive_trashed_at && (isRecent(r.op_date, settings, now) || settings.imageDisplayMode === 'cache'),
   };
 }

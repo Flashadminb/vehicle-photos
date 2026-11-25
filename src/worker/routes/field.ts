@@ -32,7 +32,7 @@ field.get('/ping', (c) => c.json({ ok: true }));
 
 field.get('/bootstrap', async (c) => {
   const [workflow, languages, overrides, settings] = await Promise.all([
-    getCurrentWorkflow(c.env),
+    getCurrentWorkflow(c.env, c.get('user').workflowId ?? 'default'),
     getLanguages(c.env),
     getTranslationOverrides(c.env),
     getSettings(c.env),

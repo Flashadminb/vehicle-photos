@@ -8,7 +8,11 @@ import { STEP_IMAGE_EDGES, stepImageEdge } from '../../shared/types';
 const EDGE_MB: Record<number, string> = { 640: '0.1', 800: '0.15', 960: '0.2', 1280: '0.35', 1600: '0.5', 1920: '0.7', 2048: '0.8' };
 import { formatBangkok } from '../../shared/time';
 
+type Profile = { id: string; name: string; user_count: number; current_version: number | null };
+
 export function WorkflowConfig() {
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [profileId, setProfileId] = useState('default');
   const [current, setCurrent] = useState<WorkflowVersion | null>(null);
   const [versions, setVersions] = useState<any[]>([]);
   const [steps, setSteps] = useState<WorkflowStep[]>([]);
@@ -19,12 +23,15 @@ export function WorkflowConfig() {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [newLang, setNewLang] = useState({ code: '', name: '' });
 
-  async function load() {
-    const [w, i, s] = await Promise.all([
-      api<{ current: WorkflowVersion; versions: any[] }>('GET', '/api/admin/workflow'),
+  async function load(pid = profileId) {
+    const [w, i, s, p] = await Promise.all([
+      api<{ current: WorkflowVersion; versions: any[] }>('GET', `/api/admin/workflow?workflowId=${encodeURIComponent(pid)}`),
       api<{ languages: Language[]; overrides: Record<string, Record<string, string>> }>('GET', '/api/admin/i18n'),
       api<AppSettings>('GET', '/api/admin/settings'),
+      api<{ profiles: Profile[] }>('GET', '/api/admin/workflows'),
     ]);
+    setProfiles(p.profiles);
+    setProfileId(pid);
     setCurrent(w.current);
     setVersions(w.versions);
     setSteps(structuredClone(w.current.steps));
@@ -37,6 +44,47 @@ export function WorkflowConfig() {
   if (!current || !settings) return <div className="page"><span className="spinner" /></div>;
 
   const dirty = JSON.stringify(steps) !== JSON.stringify(current.steps);
+  const profile = profiles.find((p) => p.id === profileId);
+
+  async function switchProfile(pid: string) {
+    if (pid === profileId) return;
+    if (dirty && !confirm('มีขั้นตอนที่แก้ไว้แต่ยังไม่ได้เผยแพร่ เปลี่ยนรูปแบบแล้วการแก้ไขจะหาย ต้องการเปลี่ยนไหม?')) return;
+    setMsg(null);
+    await load(pid).catch((e) => setMsg({ ok: false, text: e.message }));
+  }
+
+  async function addProfile() {
+    const name = prompt('ชื่อรูปแบบการถ่ายใหม่ เช่น ป้อมยาม (จะคัดลอกขั้นตอนจากรูปแบบที่เปิดอยู่ไปเป็นจุดเริ่มต้น)');
+    if (!name?.trim()) return;
+    try {
+      const r = await api<{ id: string }>('POST', '/api/admin/workflows', { name: name.trim(), copyFrom: profileId });
+      await load(r.id);
+      setMsg({ ok: true, text: `สร้างรูปแบบ “${name.trim()}” แล้ว แก้ขั้นตอนแล้วกดเผยแพร่ จากนั้นไปที่ “สมาชิกและสิทธิ์” เพื่อเลือกว่าใครใช้รูปแบบนี้` });
+    } catch (e) {
+      setMsg({ ok: false, text: (e as Error).message });
+    }
+  }
+
+  async function renameProfile() {
+    const name = prompt('ชื่อใหม่', profile?.name ?? '');
+    if (!name?.trim()) return;
+    try {
+      await api('PATCH', `/api/admin/workflows/${profileId}`, { name: name.trim() });
+      await load();
+    } catch (e) {
+      setMsg({ ok: false, text: (e as Error).message });
+    }
+  }
+
+  async function archiveProfile() {
+    if (!confirm(`ลบรูปแบบ “${profile?.name}”? ชุดรูปที่ถ่ายไปแล้วยังอยู่ในประวัติ`)) return;
+    try {
+      await api('DELETE', `/api/admin/workflows/${profileId}`);
+      await load('default');
+    } catch (e) {
+      setMsg({ ok: false, text: (e as Error).message });
+    }
+  }
   const update = (i: number, patch: Partial<WorkflowStep>) => setSteps((s) => s.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   const move = (i: number, d: number) =>
     setSteps((s) => {
@@ -50,7 +98,7 @@ export function WorkflowConfig() {
   async function publish() {
     setMsg(null);
     try {
-      const r = await api<{ id: number }>('POST', '/api/admin/workflow', { steps, note });
+      const r = await api<{ id: number }>('POST', '/api/admin/workflow', { steps, note, workflowId: profileId });
       setMsg({ ok: true, text: `เผยแพร่ขั้นตอนเวอร์ชัน v${r.id} แล้ว รอบที่กำลังถ่ายอยู่ยังใช้เวอร์ชันเดิม รอบใหม่จะใช้ v${r.id}` });
       setNote('');
       await load();
@@ -85,10 +133,27 @@ export function WorkflowConfig() {
         <span className="muted small">เวอร์ชันปัจจุบัน v{current.id} การเผยแพร่จะสร้างเวอร์ชันใหม่ที่ใช้กับรอบใหม่เท่านั้น</span>
       </div>
       {msg && <p className={`banner ${msg.ok ? 'banner-ok' : 'banner-bad'}`}>{msg.text}</p>}
+      <section className="card section profiles-bar">
+        <div className="profiles-head">
+          <h2>รูปแบบการถ่าย</h2>
+          <span className="small muted">แต่ละรูปแบบมีขั้นตอนของตัวเอง เช่น หน้างาน กับ ป้อมยาม · เลือกว่าใครใช้รูปแบบไหนที่ “สมาชิกและสิทธิ์”</span>
+        </div>
+        <div className="profiles-tabs" role="tablist">
+          {profiles.map((p) => (
+            <button key={p.id} role="tab" aria-selected={p.id === profileId} className={`btn btn-sm ${p.id === profileId ? 'btn-primary' : ''}`} onClick={() => void switchProfile(p.id)}>
+              {p.name} <span className="profile-count">{p.user_count} คน</span>
+            </button>
+          ))}
+          <button className="btn btn-sm" onClick={() => void addProfile()}>+ เพิ่มรูปแบบ</button>
+          <span style={{ flex: 1 }} />
+          <button className="btn btn-sm" onClick={() => void renameProfile()}>เปลี่ยนชื่อ</button>
+          {profileId !== 'default' && <button className="btn btn-sm btn-danger" onClick={() => void archiveProfile()}>ลบรูปแบบนี้</button>}
+        </div>
+      </section>
       <div className="split">
         <div className="split-main">
           <section className="card section">
-            <h2>ขั้นตอน</h2>
+            <h2>ขั้นตอน · {profile?.name ?? ''}</h2>
             <ol className="steps-editor">
               {steps.map((s, i) => (
                 <li key={s.id} className="step-card">
