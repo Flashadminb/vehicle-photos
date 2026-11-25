@@ -260,6 +260,7 @@ describe('CaptureEngine', () => {
     expect(s.clientRoundId).toBeNull();
     expect(Object.values(s.slots).every((x) => x.status === 'empty')).toBe(true);
     expect(s.flash).toBe('set_saved');
+    expect(s.savedPublicId).toBe('PF-000001');
     expect(store.round).toBeNull();
     expect(store.images.size).toBe(0);
   });
@@ -284,8 +285,12 @@ describe('CaptureEngine', () => {
     server.finish('img');
     await settle();
     await engine.finalize();
+    expect(engine.getState().savedPublicId).toBe('PF-000001');
+    engine.setLatestWorkflow({ id: 3, createdAt: 0, steps: [{ id: 'only', required: true, allowUpload: true, ocr: false, labels: { en: 'Only' } }] });
+    expect(engine.getState().savedPublicId).toBe('PF-000001'); // config refresh after DONE keeps the confirmation
+    expect(engine.getState().flash).toBe('set_saved');
     // The next round uses the new workflow.
-    expect(engine.getState().workflow.id).toBe(2);
+    expect(engine.getState().workflow.id).toBe(3);
     expect(engine.currentStep?.id).toBe('only');
   });
 

@@ -117,3 +117,5 @@
 }
 .fa-lock { position: fixed; inset: 0; background: rgba(243, 244, 242, 0.97); z-index: 100; display: grid; place-items: center; padding: 20px; }
 .fa-lock .card { padding: 24px; width: 100%; max-width: 340px; display: flex; flex-direction: column; gap: 12px; }
+
+.fa-flash-id { font-family: var(--mono); font-size: 13px; opacity: 0.85; margin-top: 2px; }

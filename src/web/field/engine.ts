@@ -111,6 +111,8 @@ export interface EngineState {
   slots: Record<string, Slot>;
   finalize: { status: 'idle' | 'pending' | 'failed'; error?: string };
   flash: string | null;
+  /** Set ID of the round that was just saved (for the confirmation message). */
+  savedPublicId?: string | null;
 }
 
 type Listener = (s: EngineState) => void;
@@ -236,7 +238,7 @@ export class CaptureEngine {
   setLatestWorkflow(wf: WorkflowVersion) {
     this.latestWorkflow = wf;
     if (!this.round) {
-      this.state = { ...this.emptyState(wf), flash: this.state.flash };
+      this.state = { ...this.emptyState(wf), flash: this.state.flash, savedPublicId: this.state.savedPublicId };
       this.emit();
     }
   }
@@ -364,7 +366,7 @@ export class CaptureEngine {
     this.round = null;
     await this.enqueueStore(() => this.deps.store.clearRound(round.clientRoundId));
     for (const id of ids) await this.deps.store.deleteImage(id);
-    this.state = { ...this.emptyState(this.latestWorkflow), flash: 'set_saved' };
+    this.state = { ...this.emptyState(this.latestWorkflow), flash: 'set_saved', savedPublicId: round.publicId ?? null };
     this.emit();
     if (this.flashTimer) clearTimeout(this.flashTimer);
     this.flashTimer = setTimeout(() => {

@@ -51,6 +51,7 @@ export const TRANSLATION_KEYS = [
   'no_round_title',
   'no_round_hint',
   'start_capture',
+  'back_to_done',
 ] as const;
 
 export type TranslationKey = (typeof TRANSLATION_KEYS)[number];
@@ -103,6 +104,7 @@ export const BUILTIN_TRANSLATIONS: Record<string, Record<TranslationKey, string>
     no_round_title: 'No set in progress',
     no_round_hint: 'Saved sets are kept in the dashboard. Photos taken on another phone or browser are not shown here.',
     start_capture: 'Start with step 1',
+    back_to_done: 'Back to DONE',
   },
   th: {
     app_name: 'ถ่ายรูปรถ',
@@ -151,6 +153,7 @@ export const BUILTIN_TRANSLATIONS: Record<string, Record<TranslationKey, string>
     no_round_title: 'ยังไม่มีชุดที่กำลังถ่ายในเครื่องนี้',
     no_round_hint: 'ชุดที่กดเสร็จสิ้นแล้วถูกบันทึกไว้ในหลังบ้าน รูปที่ถ่ายบนมือถือหรือเบราว์เซอร์อื่นจะไม่แสดงในเครื่องนี้',
     start_capture: 'เริ่มถ่ายขั้นตอนที่ 1',
+    back_to_done: 'ไม่ถ่ายใหม่ กลับไปหน้าเสร็จสิ้น',
   },
 };
 

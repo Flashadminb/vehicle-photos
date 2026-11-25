@@ -250,6 +250,8 @@ function Capture({ boot, reload, onSignedOut }: { boot: Boot; reload: () => Prom
         online={online}
         publicId={s.publicId}
         hasRound={!!s.clientRoundId}
+        canReview={!!s.clientRoundId && engine.doneBlocker(s) !== 'missing'}
+        savedPublicId={s.savedPublicId ?? null}
         doneEnabled={engine.canFinish(s)}
         doneBlocker={engine.doneBlocker(s)}
         finalize={s.finalize}

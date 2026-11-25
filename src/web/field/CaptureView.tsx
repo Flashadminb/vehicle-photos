@@ -17,6 +17,10 @@ export interface CaptureViewProps {
   publicId: string | null;
   /** False when no photo has been accepted yet on this device (no round in progress). */
   hasRound?: boolean;
+  /** All required photos are taken: offer a way back to the DONE page without retaking. */
+  canReview?: boolean;
+  /** Set ID shown in the "saved" confirmation. */
+  savedPublicId?: string | null;
   doneEnabled: boolean;
   doneBlocker: 'missing' | 'uploading' | null;
   finalize: { status: 'idle' | 'pending' | 'failed'; error?: string };
@@ -105,15 +109,6 @@ export function CaptureView(p: CaptureViewProps) {
             </button>
           );
         })}
-        <button
-          type="button"
-          className={`fa-step fa-step-review ${review ? 'is-current' : ''}`}
-          onClick={() => p.onSelectStep(steps.length)}
-          aria-current={review ? 'step' : undefined}
-        >
-          <span className="fa-step-n">✓</span>
-          <span className="fa-step-label">{t('done')}</span>
-        </button>
       </nav>
 
       <main className="fa-main">
@@ -158,6 +153,11 @@ export function CaptureView(p: CaptureViewProps) {
                   </button>
                 )}
               </div>
+              {p.canReview && (
+                <button type="button" className="btn btn-block" onClick={() => p.onSelectStep(steps.length)}>
+                  {t('back_to_done')} →
+                </button>
+              )}
             </div>
           </section>
         )}
@@ -244,6 +244,7 @@ export function CaptureView(p: CaptureViewProps) {
       {p.flash && (
         <div className="fa-flash" role="status">
           ✓ {t(p.flash)}
+          {p.flash === 'set_saved' && p.savedPublicId && <div className="fa-flash-id">{p.savedPublicId}</div>}
         </div>
       )}
     </div>
