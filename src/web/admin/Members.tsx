@@ -123,7 +123,16 @@ export function Members() {
                         {u.disabled ? <span className="pill pill-bad">ปิดใช้งาน</span> : <span className="pill pill-ok">ใช้งานอยู่</span>}
                         {u.must_change_password ? <span className="pill pill-warn">รหัสผ่านชั่วคราว</span> : null}
                         {u.has_pin ? <span className="pill">ตั้ง PIN แล้ว</span> : null}
-                        {u.active_sessions > 0 && <span className="pill pill-info">เข้าระบบอยู่ {u.active_sessions} อุปกรณ์</span>}
+                        {u.online_sessions > 0 && (
+                          <span className="pill pill-ok" title="เปิดแอปอยู่ภายใน ~10 นาทีที่ผ่านมา">
+                            <span className="dot-online" aria-hidden /> ออนไลน์ตอนนี้ {u.online_sessions} อุปกรณ์
+                          </span>
+                        )}
+                        {u.active_sessions > 0 && (
+                          <span className="pill" title="จำนวนอุปกรณ์ที่ยังล็อกอินค้างไว้ (รวมที่ปิดแอปไปแล้ว) กด “เพิกถอนการเข้าถึง” เพื่อออกจากระบบทุกเครื่อง">
+                            ล็อกอินค้างไว้ {u.active_sessions} อุปกรณ์
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="small">{u.last_seen_at ? formatBangkok(u.last_seen_at) : '—'}</td>

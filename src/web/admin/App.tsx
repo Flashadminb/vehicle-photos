@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { usePresence } from '../shared/presence';
 import { api, ApiError } from '../shared/api';
 import { MeContext, type Me } from './context';
 import { History } from './History';
@@ -47,6 +48,7 @@ export function App() {
     }
   }, []);
   useEffect(() => void load(), [load]);
+  usePresence(me ? '/api/admin/ping' : null);
 
   const value = useMemo<Me | null>(() => (me ? { ...me, can: (p: string) => me.permissions.includes(p) } : null), [me]);
 

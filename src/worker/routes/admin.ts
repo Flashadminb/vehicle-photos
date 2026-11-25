@@ -382,15 +382,22 @@ function tempPassword() {
   return randomToken(9).replace(/[-_]/g, 'x');
 }
 
+/** Presence ping: the auth middleware refreshes the session's last-seen time. */
+admin.get('/ping', (c) => c.json({ ok: true }));
+
+/** A device counts as "online now" if its session was seen within this window (pings every 3 min, written every 5). */
+const ONLINE_WINDOW_MS = 11 * 60_000;
+
 admin.get('/users', requirePermission('users.manage'), async (c) => {
   const { results } = await c.env.DB.prepare(
     `SELECT u.id, u.username, u.display_name, u.role, u.disabled, u.must_change_password, u.language, u.created_at,
        (u.pin_hash IS NOT NULL) AS has_pin,
        (SELECT MAX(last_seen_at) FROM sessions s WHERE s.user_id = u.id) AS last_seen_at,
-       (SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id AND s.revoked_at IS NULL AND s.expires_at > ?) AS active_sessions
+       (SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id AND s.revoked_at IS NULL AND s.expires_at > ?1) AS active_sessions,
+       (SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id AND s.revoked_at IS NULL AND s.expires_at > ?1 AND s.last_seen_at > ?2) AS online_sessions
      FROM users u ORDER BY u.disabled, u.role, u.display_name LIMIT 1000`,
   )
-    .bind(Date.now())
+    .bind(Date.now(), Date.now() - ONLINE_WINDOW_MS)
     .all();
   return c.json({ users: results });
 });

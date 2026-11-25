@@ -27,6 +27,9 @@ field.post('/logout', async (c) => {
 
 field.use('/*', requireSession('field'));
 
+/** Presence ping: the auth middleware refreshes the session's last-seen time. */
+field.get('/ping', (c) => c.json({ ok: true }));
+
 field.get('/bootstrap', async (c) => {
   const [workflow, languages, overrides, settings] = await Promise.all([
     getCurrentWorkflow(c.env),

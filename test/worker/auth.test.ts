@@ -69,3 +69,20 @@ describe('authentication & role enforcement', () => {
     await testEnv.DB.prepare(`DELETE FROM login_attempts`).run();
   });
 });
+
+describe('presence', () => {
+  it('counts only recently-seen devices as online now', async () => {
+    const { client: admin } = await (await import('./helpers')).loggedIn('admin', 'super_admin');
+    const { client: field, user } = await (await import('./helpers')).loggedIn('field', 'operator');
+    expect((await field.json('GET', '/api/field/ping')).status).toBe(200);
+    const env = (await import('./helpers')).testEnv;
+    // A second, stale device (seen an hour ago, still logged in).
+    await env.DB.prepare(`INSERT INTO sessions (id, user_id, kind, created_at, expires_at, last_seen_at) VALUES (?, ?, 'field', ?, ?, ?)`)
+      .bind(crypto.randomUUID(), user.id, Date.now() - 3600_000, Date.now() + 86400_000, Date.now() - 3600_000)
+      .run();
+    const r = await admin.json('GET', '/api/admin/users');
+    const row = r.body.users.find((u: any) => u.id === user.id);
+    expect(row.active_sessions).toBe(2);
+    expect(row.online_sessions).toBe(1);
+  });
+});

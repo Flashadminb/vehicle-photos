@@ -8,6 +8,7 @@ import { IdbStore, requestPersistentStorage } from './storage';
 import { httpTransport } from './transport';
 import { createImaging, readExifTime } from './imaging';
 import { useCamera, useWakeLock, Viewfinder, vibrate } from './camera';
+import { usePresence } from '../shared/presence';
 
 type Boot = FieldBootstrap & { mustChangePassword: boolean };
 
@@ -239,6 +240,7 @@ function Capture({ boot, reload, onSignedOut }: { boot: Boot; reload: () => Prom
   const [justShot, setJustShot] = useState<{ stepId: string; index: number } | null>(null);
   const [flashKey, setFlashKey] = useState(0);
   useWakeLock(!!s.clientRoundId || camera.status === 'live');
+  usePresence('/api/field/ping');
   useEffect(() => {
     if (s.flash === 'set_saved') vibrate([40, 60, 40]);
   }, [s.flash]);

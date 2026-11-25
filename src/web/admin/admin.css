@@ -162,3 +162,4 @@
 .cleanup .toolbar { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
 .cleanup .banner { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
 .cleanup .banner p { margin: 0; }
+.dot-online { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #3c8655; margin-right: 4px; vertical-align: 1px; }
