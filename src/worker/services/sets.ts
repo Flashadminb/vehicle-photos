@@ -56,7 +56,7 @@ export async function setDetails(env: Env, user: AuthUser, id: string, settings:
       images: imgs.map((i) => {
         const kinds = cached.get(i.id) ?? new Set<string>();
         // Recent sets: images come from cache or fall back to Drive. Cache mode: only cached copies.
-        const canShow = i.active && i.uploaded_at && (recent || kinds.has('display') || kinds.has('thumb'));
+        const canShow = !r.drive_trashed_at && i.active && i.uploaded_at && (recent || kinds.has('display') || kinds.has('thumb'));
         return {
           id: i.id,
           version: i.version,
@@ -97,6 +97,7 @@ export async function setDetails(env: Env, user: AuthUser, id: string, settings:
       history: plateHistory,
     },
     drive: { folderId: r.drive_folder_id, folderName: r.drive_folder_name, dateFolderId: r.drive_date_folder_id, status: r.folder_status },
+    driveTrashedAt: r.drive_trashed_at,
     hiddenAt: r.hidden_at,
     removedAt: r.removed_at,
     steps,

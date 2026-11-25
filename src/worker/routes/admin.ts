@@ -33,6 +33,7 @@ import { changeVisibility, loadVisibleSet, setDetails, updatePlate, type SetActi
 import { cacheUsage, evictCache, getCache, type CacheKind } from '../services/cache';
 import { audit } from '../services/audit';
 import { processJobs } from '../services/maintenance';
+import { cleanupOlderThan, cleanupPreview, driveUsage, restoreRound, trashRound } from '../services/drivetrash';
 import { onlineWindowMs, visionCap, visionPeriod, visionUsage } from '../services/ocr';
 import { getDrive, isDemo, effectiveRoot } from '../drive';
 import { buildAuthUrl, clearToken, exchangeCode, loadToken, oauthRedirectUri, saveToken } from '../drive/google';
@@ -151,6 +152,31 @@ admin.get('/sets/:id', requirePermission('sets.view'), async (c) => {
   return c.json(await setDetails(c.env, c.get('user'), c.req.param('id'), settings, getDrive(c.env, baseUrl(c.req.url))));
 });
 
+// (Registered before the :action route, whose pattern would also match "drive-restore".)
+// ---------- Free up Drive space (Super Admin; Drive trash only, recoverable) ----------
+admin.post('/sets/:id/drive-trash', requirePermission('drive.trash'), async (c) => {
+  return c.json(await trashRound(c.env, getDrive(c.env, baseUrl(c.req.url)), c.get('user'), c.req.param('id'), clientIp(c)));
+});
+
+admin.post('/sets/:id/drive-restore', requirePermission('drive.trash'), async (c) => {
+  return c.json(await restoreRound(c.env, getDrive(c.env, baseUrl(c.req.url)), c.get('user'), c.req.param('id'), clientIp(c)));
+});
+
+admin.get('/drive/usage', requirePermission('storage.view'), async (c) => {
+  return c.json(await driveUsage(c.env, getDrive(c.env, baseUrl(c.req.url))));
+});
+
+admin.get('/drive/cleanup-preview', requirePermission('drive.trash'), async (c) => {
+  return c.json(await cleanupPreview(c.env, Number(c.req.query('days'))));
+});
+
+admin.post('/drive/cleanup', requirePermission('drive.trash'), async (c) => {
+  const { days, confirm } = await readJson<{ days: number; confirm: string }>(c);
+  const res = await cleanupOlderThan(c.env, c.get('user'), Number(days), String(confirm ?? ''), clientIp(c));
+  if (res.queued) c.executionCtx.waitUntil(processJobs(c.env, 25, baseUrl(c.req.url)).catch(() => undefined));
+  return c.json(res);
+});
+
 admin.post('/sets/:id/:action{hide|unhide|remove|restore}', async (c) => {
   await changeVisibility(c.env, c.get('user'), c.req.param('id'), c.req.param('action') as SetAction, clientIp(c));
   return c.json({ ok: true });
@@ -176,6 +202,7 @@ async function serveImage(c: any, imageId: string, kind: CacheKind, allowOld: bo
   const img = await env.DB.prepare(`SELECT * FROM images WHERE id = ?`).bind(imageId).first();
   if (!img || !img.uploaded_at) throw notFound('Image not available.');
   const round = await loadVisibleSet(env, c.get('user'), img.round_id);
+  if (round.drive_trashed_at) throw new ApiError(410, 'drive_trashed', 'รูปของชุดนี้ถูกย้ายไปถังขยะ Drive แล้ว');
   const settings = await getSettings(env);
   const recent = isRecent(round.op_date, settings, Date.now());
   if (!allowOld && !recent && settings.imageDisplayMode !== 'cache') {
@@ -212,7 +239,7 @@ admin.post('/exports', requirePermission('sets.export'), async (c) => {
     sets.push({
       ...d.set,
       steps: d.steps.map((s) => {
-        const active = s.images.find((i) => i.active && i.uploadedAt);
+        const active = d.set.driveTrashed ? undefined : s.images.find((i) => i.active && i.uploadedAt);
         return {
           id: s.id,
           label: s.label,

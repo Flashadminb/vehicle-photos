@@ -59,6 +59,7 @@ export const TRANSLATION_KEYS = [
   'torch',
   'native_camera',
   'in_app_camera',
+  'doc_guide',
 ] as const;
 
 export type TranslationKey = (typeof TRANSLATION_KEYS)[number];
@@ -119,6 +120,7 @@ export const BUILTIN_TRANSLATIONS: Record<string, Record<TranslationKey, string>
     torch: 'Light',
     native_camera: 'Phone camera',
     in_app_camera: 'Use in-app camera (faster)',
+    doc_guide: 'Fill the frame with the plate line, e.g. บร7865(เพชรบุรี)',
   },
   th: {
     app_name: 'ถ่ายรูปรถ',
@@ -175,6 +177,7 @@ export const BUILTIN_TRANSLATIONS: Record<string, Record<TranslationKey, string>
     torch: 'ไฟ',
     native_camera: 'กล้องมือถือ',
     in_app_camera: 'ใช้กล้องในแอป (เร็วกว่า)',
+    doc_guide: 'ให้บรรทัดทะเบียน เช่น บร7865(เพชรบุรี) ใหญ่เต็มกรอบ',
   },
 };
 

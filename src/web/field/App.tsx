@@ -162,6 +162,7 @@ function Capture({ boot, reload, onSignedOut }: { boot: Boot; reload: () => Prom
             keepOriginals: boot.settings.keepOriginals ?? false,
           }),
           cacheEnabled: boot.cacheEnabled !== false,
+          needOriginal: (st) => !!boot.settings.keepOriginals || (!!st.ocr && !!boot.settings.ocrHighRes),
           stepLabel: (s) => stepLabel(s.labels, boot.settings.defaultLanguage, boot.settings.fallbackLanguage),
         },
         boot.workflow,
@@ -230,7 +231,9 @@ function Capture({ boot, reload, onSignedOut }: { boot: Boot; reload: () => Prom
       return 'app';
     }
   });
-  const camera = useCamera(cameraMode === 'app' && onCaptureStep && !locked, boot.settings.cameraMaxEdge ?? 1920);
+  // Sharper frames when this set has photos read by OCR (slip / plate); other photos are still downsized for upload.
+  const wantsSharp = !!boot.settings.ocrHighRes && s.workflow.steps.some((x) => x.ocr);
+  const camera = useCamera(cameraMode === 'app' && onCaptureStep && !locked, Math.max(boot.settings.cameraMaxEdge ?? 1920, wantsSharp ? 2560 : 0));
   const [shutterBusy, setShutterBusy] = useState(false);
   const [flashKey, setFlashKey] = useState(0);
   useWakeLock(!!s.clientRoundId || camera.status === 'live');
@@ -310,7 +313,7 @@ function Capture({ boot, reload, onSignedOut }: { boot: Boot; reload: () => Prom
         onTake={() => void takePhoto()}
         shutterBusy={shutterBusy}
         viewfinder={
-          cameraMode === 'app' && step ? <Viewfinder camera={camera} plateGuide={!!step.ocr} t={t} flashKey={flashKey} /> : undefined
+          cameraMode === 'app' && step ? <Viewfinder camera={camera} guide={step.ocr ? (step.ocrKind === 'document' ? 'document' : 'plate') : null} t={t} flashKey={flashKey} /> : undefined
         }
         onNativeCamera={cameraMode === 'app' ? () => cameraInput.current?.click() : undefined}
         onUpload={() => fileInput.current?.click()}

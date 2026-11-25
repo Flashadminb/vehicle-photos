@@ -75,7 +75,8 @@ export interface Watermark {
 
 export interface Imaging {
   /** Compress the original at a quality that keeps plates readable. */
-  prepare(blob: Blob): Promise<{ original: Blob; width: number; height: number }>;
+  /** `original`: a sharper original copy will be uploaded for this photo (encode it, capped in size). */
+  prepare(blob: Blob, opts?: { original?: boolean }): Promise<{ original: Blob; width: number; height: number }>;
   /** Watermarked display copy + small thumbnail. */
   render(original: Blob, wm: Watermark): Promise<{ display: Blob; thumb: Blob }>;
 }
@@ -100,6 +101,8 @@ export interface EngineDeps {
   /** Retry delays in ms for temporary failures. */
   backoff?: number[];
   concurrency?: number;
+  /** Whether an original copy will be uploaded for photos of this step (OCR steps / keep originals). */
+  needOriginal?: (step: WorkflowVersion['steps'][number]) => boolean;
   /** False when the server has no R2 cache: skip uploading cache copies. */
   cacheEnabled?: boolean;
   stepLabel: (step: WorkflowVersion['steps'][number]) => string;
@@ -479,7 +482,7 @@ export class CaptureEngine {
 
       // Ask the server for upload targets WHILE the photo is being prepared (saves a round trip).
       const [prepared, begin] = await Promise.all([
-        this.deps.imaging.prepare(img.blob),
+        this.deps.imaging.prepare(img.blob, { original: this.deps.needOriginal?.(step) ?? false }),
         this.deps.transport.begin(
           {
             clientRoundId: round.clientRoundId,

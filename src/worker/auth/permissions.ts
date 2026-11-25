@@ -16,6 +16,8 @@ export const PERMISSIONS = {
   'config.edit': ['super_admin', 'admin'],
   'users.manage': ['super_admin', 'admin'],
   'drive.manage': ['super_admin'],
+  /** Move set photos to the Drive trash (recoverable). Never a permanent delete. */
+  'drive.trash': ['super_admin'],
   'storage.view': ['super_admin', 'admin'],
   'storage.manage': ['super_admin'],
   'audit.view': ['super_admin', 'admin'],

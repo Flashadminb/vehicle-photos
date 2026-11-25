@@ -11,8 +11,9 @@ export interface DriveFile {
 /**
  * The subset of Google Drive the application uses.
  *
- * There is deliberately NO delete or trash method: hiding/removing photo sets in the
- * app must never delete Drive files, and that guarantee is enforced by construction.
+ * There is deliberately NO permanent-delete method. The only destructive operation is
+ * setTrashed(): moving a whole set folder to the Drive trash (recoverable for 30 days),
+ * used solely by the Super-Admin "free up Drive space" action. Hide / remove never call it.
  */
 export interface DriveClient {
   readonly mode: 'google' | 'demo';
@@ -29,6 +30,10 @@ export interface DriveClient {
   createUploadSession(parentId: string, name: string, mimeType: string, origin: string | null): Promise<string>;
   download(id: string): Promise<Response>;
   shareWithUser(id: string, email: string, role: 'reader' | 'writer'): Promise<void>;
+  /** Move to / restore from the Drive trash (never a permanent delete). */
+  setTrashed(id: string, trashed: boolean): Promise<void>;
+  /** Storage used/limit of the connected account (limit null = unlimited). */
+  storageQuota(): Promise<{ usage: number; limit: number | null; usageInDrive: number; usageInTrash: number }>;
   folderUrl(id: string): string;
 }
 

@@ -18,5 +18,8 @@ Keep `docs/QUOTAS.md` up to date when usage characteristics change.
 
 ## Other conventions
 - Dashboard and user-facing messages are Thai; the field app's texts are admin-editable (`src/shared/i18n.ts`).
-- Never add a code path that deletes Google Drive files (`DriveClient` intentionally has no delete).
+- Never add a code path that PERMANENTLY deletes Google Drive files (`DriveClient` has no delete). The only
+  destructive call is `setTrashed` (Drive trash, recoverable 30 days), used only by the Super-Admin
+  "free up Drive space" feature (`services/drivetrash.ts`): finished sets only, typed confirmation, audited.
+  Hide/remove must never call it.
 - Run `npm run typecheck && npm test` before committing.

@@ -119,6 +119,7 @@ export async function beginImage(
   workflow = await getWorkflow(env, round.workflow_version_id);
   if (!workflow) throw new Error('Workflow version missing');
   if (round.status === 'finalized') throw conflict('round_finalized', 'ชุดนี้ถูกบันทึกไปแล้ว');
+  if (round.drive_trashed_at) throw conflict('round_trashed', 'รูปของชุดนี้ถูกย้ายไปถังขยะ Drive แล้ว กรุณาเริ่มชุดใหม่');
   if (round.status === 'abandoned') {
     await env.DB.prepare(`UPDATE rounds SET status = 'open', updated_at = ? WHERE id = ?`).bind(now, round.id).run();
   }
@@ -202,11 +203,13 @@ export async function beginImage(
   // 4. Fresh resumable upload sessions (Drive session URLs never expose credentials).
   if (image.status === 'pending' && image.active) {
     try {
+      // A sharper copy is kept for every photo (keepOriginals) or only for photos read by OCR.
+      const wantOriginal = settings.keepOriginals || (step.ocr && settings.ocrHighRes && settings.ocrProvider !== 'none');
       // Both sessions are created in parallel to cut a Drive round trip.
       const origName = image.file_name.replace(/\.jpg$/, '_original.jpg');
       const [display, original] = await Promise.all([
         drive.createUploadSession(folderId, image.file_name, 'image/jpeg', opts.origin),
-        settings.keepOriginals ? drive.createUploadSession(folderId, origName, 'image/jpeg', opts.origin) : Promise.resolve(null),
+        wantOriginal ? drive.createUploadSession(folderId, origName, 'image/jpeg', opts.origin) : Promise.resolve(null),
       ]);
       const uploads: BeginImageResponse['uploads'] = { display: { url: display, name: image.file_name } };
       if (original) uploads.original = { url: original, name: origName };

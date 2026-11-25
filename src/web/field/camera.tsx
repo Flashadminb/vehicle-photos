@@ -101,12 +101,12 @@ export function useCamera(active: boolean, maxEdge = 1920) {
 
 export function Viewfinder({
   camera,
-  plateGuide,
+  guide,
   t,
   flashKey,
 }: {
   camera: ReturnType<typeof useCamera>;
-  plateGuide: boolean;
+  guide: 'plate' | 'document' | null;
   t: (k: string) => string;
   flashKey: number;
 }) {
@@ -118,9 +118,9 @@ export function Viewfinder({
     <div className="fa-vf">
       <video ref={camera.videoRef} playsInline muted autoPlay aria-label={t('take_photo')} />
       {status !== 'live' && <div className="fa-vf-msg small">{t('camera_starting')}</div>}
-      {plateGuide && status === 'live' && (
-        <div className="fa-vf-guide" aria-hidden>
-          <span>{t('plate_guide')}</span>
+      {guide && status === 'live' && (
+        <div className={`fa-vf-guide ${guide === 'document' ? 'is-doc' : ''}`} aria-hidden>
+          <span>{t(guide === 'document' ? 'doc_guide' : 'plate_guide')}</span>
         </div>
       )}
       {camera.torch.supported && (

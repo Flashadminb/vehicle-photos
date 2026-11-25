@@ -188,6 +188,7 @@ export function toSetRow(r: any, settings: AppSettings, drive: Pick<DriveClient,
     driveUrl: r.drive_folder_id ? drive.folderUrl(r.drive_folder_id) : null,
     hidden: !!r.hidden_at,
     removed: !!r.removed_at,
-    imagesAllowed: isRecent(r.op_date, settings, now) || settings.imageDisplayMode === 'cache',
+    driveTrashed: !!r.drive_trashed_at,
+    imagesAllowed: !r.drive_trashed_at && (isRecent(r.op_date, settings, now) || settings.imageDisplayMode === 'cache'),
   };
 }

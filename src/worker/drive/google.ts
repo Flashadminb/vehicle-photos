@@ -221,6 +221,27 @@ export class GoogleDrive implements DriveClient {
     });
   }
 
+  async setTrashed(id: string, trashed: boolean): Promise<void> {
+    await this.json(`/files/${encodeURIComponent(id)}?fields=id,trashed&supportsAllDrives=true`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trashed }),
+    });
+  }
+
+  async storageQuota() {
+    const r = await this.json<{ storageQuota: { usage?: string; limit?: string; usageInDrive?: string; usageInDriveTrash?: string } }>(
+      `/about?fields=storageQuota`,
+    );
+    const q = r.storageQuota ?? {};
+    return {
+      usage: Number(q.usage ?? 0),
+      limit: q.limit != null ? Number(q.limit) : null,
+      usageInDrive: Number(q.usageInDrive ?? 0),
+      usageInTrash: Number(q.usageInDriveTrash ?? 0),
+    };
+  }
+
   folderUrl(id: string) {
     return `https://drive.google.com/drive/folders/${encodeURIComponent(id)}`;
   }

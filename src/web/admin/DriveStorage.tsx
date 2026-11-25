@@ -27,6 +27,121 @@ function Meter({ used, quota, threshold, label }: { used: number | null; quota: 
   );
 }
 
+/** Drive storage meter + "free up space" (Super Admin). Drive is only read when this page opens. */
+function DriveSpace({ connected }: { connected: boolean }) {
+  const me = useMe();
+  const [usage, setUsage] = useState<any>(null);
+  const [err, setErr] = useState('');
+  const [days, setDays] = useState(180);
+  const [preview, setPreview] = useState<any>(null);
+  const [confirmText, setConfirmText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState('');
+  const CONFIRM = 'ย้ายไปถังขยะ';
+
+  const loadUsage = () => api('GET', '/api/admin/drive/usage').then(setUsage, (e) => setErr(e.message));
+  useEffect(() => {
+    if (connected) void loadUsage();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected]);
+  if (!connected) return null;
+
+  const pct = usage?.limit ? (usage.usage / usage.limit) * 100 : null;
+  return (
+    <section className="card section">
+      <h2>พื้นที่ Google Drive</h2>
+      {err && <p className="banner banner-bad small">{err}</p>}
+      {!usage && !err && <span className="spinner" />}
+      {usage && (
+        <>
+          {usage.limit ? (
+            <Meter label="ทั้งบัญชี (Drive + Gmail + Photos)" used={usage.usage} quota={usage.limit} threshold={70} />
+          ) : (
+            <p className="small">ใช้ไป {fmtBytes(usage.usage)} (บัญชีนี้ไม่จำกัดพื้นที่)</p>
+          )}
+          <p className="small muted">
+            รูปของแอปนี้ประมาณ {fmtBytes(usage.appBytes)} · อยู่ในถังขยะ Drive {fmtBytes(usage.usageInTrash)}
+            {usage.pendingTrash > 0 && <> · กำลังย้ายไปถังขยะอีก {usage.pendingTrash} ชุด</>}
+          </p>
+          {pct != null && pct >= 70 && (
+            <p className="banner banner-warn small">
+              Drive ใช้ไปเกิน 70% แล้ว — เมื่อเต็ม การอัปโหลดรูปจากหน้างานจะล้มเหลว ควรย้ายรูปชุดเก่าไปถังขยะ แล้ว “ล้างถังขยะ” ใน Google Drive (พื้นที่จะคืนหลังล้างถังขยะเท่านั้น)
+            </p>
+          )}
+        </>
+      )}
+
+      {me.can('drive.trash') && (
+        <div className="cleanup">
+          <h3>คืนพื้นที่: ย้ายรูปชุดเก่าไปถังขยะ Drive</h3>
+          <p className="small muted">
+            ย้ายโฟลเดอร์รูปของชุดที่เสร็จแล้วและเก่ากว่าที่กำหนดไปถังขยะ Google Drive ข้อมูลชุด (รหัส ทะเบียน เวลา ผู้ถ่าย) ยังค้นหาได้ในประวัติ
+            กู้คืนรายชุดได้ภายใน 30 วันจากหน้ารายละเอียดชุด · แอปไม่ลบถาวรเอง พื้นที่จะคืนเมื่อถังขยะถูกล้าง (Google ล้างเองหลัง 30 วัน หรือกดล้างเองใน Drive)
+          </p>
+          <div className="toolbar">
+            <label className="field">
+              <span>เก่ากว่า (วัน, อย่างน้อย 7)</span>
+              <input className="input" type="number" min={7} value={days} onChange={(e) => { setDays(Number(e.target.value)); setPreview(null); }} />
+            </label>
+            <button
+              className="btn"
+              disabled={busy}
+              onClick={async () => {
+                setErr('');
+                setDone('');
+                try {
+                  setPreview(await api('GET', `/api/admin/drive/cleanup-preview?days=${days}`));
+                } catch (e) {
+                  setErr((e as Error).message);
+                }
+              }}
+            >
+              ตรวจดูว่ามีกี่ชุด
+            </button>
+          </div>
+          {preview && (
+            preview.sets === 0 ? (
+              <p className="small">ไม่มีชุดที่เก่ากว่า {days} วัน (ก่อนวันที่ {preview.before})</p>
+            ) : (
+              <div className="banner banner-warn small">
+                <p>
+                  พบ <strong>{preview.sets.toLocaleString()}</strong> ชุด (วันที่ {preview.oldest} ถึง {preview.newest}) ประมาณ <strong>{fmtBytes(preview.bytes)}</strong>
+                  {preview.sets > preview.maxPerRun && <> · ครั้งนี้จะทำ {preview.maxPerRun} ชุดที่เก่าที่สุดก่อน กดซ้ำเพื่อทำต่อ</>}
+                </p>
+                <label className="field">
+                  <span>พิมพ์ “{CONFIRM}” เพื่อยืนยัน</span>
+                  <input className="input" value={confirmText} onChange={(e) => setConfirmText(e.target.value)} />
+                </label>
+                <button
+                  className="btn btn-danger"
+                  disabled={busy || confirmText.trim() !== CONFIRM}
+                  onClick={async () => {
+                    setBusy(true);
+                    try {
+                      const r = await api('POST', '/api/admin/drive/cleanup', { days, confirm: confirmText.trim() });
+                      setDone(`กำลังย้าย ${r.queued} ชุดไปถังขยะ Drive (ทำในเบื้องหลัง: ทันที 25 ชุด แล้วต่ออีกราว 10 ชุดทุก 15 นาที)`);
+                      setPreview(null);
+                      setConfirmText('');
+                      void loadUsage();
+                    } catch (e) {
+                      setErr((e as Error).message);
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  ย้าย {Math.min(preview.sets, preview.maxPerRun).toLocaleString()} ชุดไปถังขยะ
+                </button>
+              </div>
+            )
+          )}
+          {done && <p className="banner banner-ok small">{done}</p>}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function DriveStorage() {
   const me = useMe();
   const [drive, setDrive] = useState<any>(null);
@@ -198,6 +313,8 @@ export function DriveStorage() {
         )}
       </section>
 
+      <DriveSpace connected={drive.mode === 'demo' || (drive.connected && drive.rootOk)} />
+
       <section className="card section">
         <h2>พื้นที่บนโฮสต์</h2>
         <p className="small muted">
@@ -289,7 +406,7 @@ export function DriveStorage() {
       <section className="card section">
         <h2>นโยบายการเก็บรักษา</h2>
         <ul className="small policy">
-          <li><strong>รูป</strong> เก็บใน Google Drive ถาวร แอปไม่เคยลบไฟล์หรือโฟลเดอร์ใน Drive และไม่มีปุ่มลบ</li>
+          <li><strong>รูป</strong> เก็บใน Google Drive ถาวร แอปไม่ลบไฟล์ถาวร ทางเดียวที่เอารูปออกคือ Super Admin กด “ย้ายไปถังขยะ” (กู้คืนได้ 30 วัน, บันทึกใน log ทุกครั้ง)</li>
           <li><strong>ซ่อน / ลบ</strong> เปลี่ยนแค่การแสดงผลในแอป ยังเก็บข้อมูลขั้นต่ำ (รหัสชุด, เวลา, ทะเบียน, ID โฟลเดอร์ Drive) และบันทึกการใช้งานไว้</li>
           <li><strong>รูปที่ถูกถ่ายซ้ำแทน</strong> ถ้าขึ้น Drive แล้วจะย้ายไปโฟลเดอร์ย่อย <code>_replaced</code> และเก็บไว้ ถ้ายังไม่ออกจากมือถือจะถูกทิ้งในเครื่อง</li>
           <li><strong>รอบที่ถูกทิ้งไว้</strong> (ไม่มีความเคลื่อนไหว {s?.abandonAfterHours ?? 48} ชม.) จะถูกทำเครื่องหมาย “ถูกทิ้งไว้” โฟลเดอร์ Drive ยังอยู่ และกลับมาทำต่อได้ถ้ามือถืออัปโหลดอีก</li>

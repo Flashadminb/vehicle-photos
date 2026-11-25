@@ -207,7 +207,7 @@ describe('hide / remove / plate correction', () => {
       expect((await su.json('GET', q({ q: 'ขค7777', visibility: 'removed' }))).body.total).toBe(1);
       // Drive untouched: no destructive calls exist, and the file count is unchanged.
       expect(drive.calls.map((c) => c.op)).not.toContain('delete');
-      expect(drive.calls.map((c) => c.op)).not.toContain('trash');
+      expect(drive.calls.map((c) => c.op)).not.toContain('setTrashed');
       const after = (await testEnv.DB.prepare(`SELECT COUNT(*) AS n FROM demo_drive_files`).first<any>()).n;
       expect(after).toBe(before);
       expect(typeof (drive as any).delete).toBe('undefined');

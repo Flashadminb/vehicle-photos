@@ -106,7 +106,10 @@ make that swap contained.
   image (`HH-mm-ss_<plate or ไม่ระบุ>_PF-000001`); renamed (same ID) when OCR finishes or an
   admin corrects the plate; rounds crossing midnight stay in their original date folder;
   names are sanitised; folder IDs are stored in D1.
-* **No delete path:** the `DriveClient` interface has no delete/trash method at all.
+* **No permanent-delete path:** the `DriveClient` interface has no delete method. The only destructive call is
+  `setTrashed()` — Drive trash, recoverable for 30 days — used solely by the Super-Admin "free up Drive space"
+  feature (single set with typed set ID, or finished sets older than N ≥ 7 days with typed confirmation; every
+  action audited; metadata kept; restore from set details). Hide/remove never call it (tested).
 
 ## 5. Data model (D1 / SQLite) — see `migrations/0001_init.sql`
 

@@ -137,12 +137,13 @@ const decoded = new WeakMap<Blob, ImageBitmap>();
 
 export function createImaging(opts: ImagingOptions): Imaging {
   return {
-    async prepare(blob) {
+    async prepare(blob, o) {
       const bmp = await decode(blob);
       decoded.set(blob, bmp);
       const small = Math.max(bmp.width, bmp.height) <= opts.originalEdge;
+      const wanted = opts.keepOriginals || !!o?.original;
       // No original is uploaded, or the JPEG is already small: no extra encoding work.
-      if (!opts.keepOriginals || (small && blob.type === 'image/jpeg' && blob.size < 2.5 * 1024 * 1024)) {
+      if (!wanted || (small && blob.type === 'image/jpeg' && blob.size < 2.5 * 1024 * 1024)) {
         return { original: blob, width: bmp.width, height: bmp.height };
       }
       decoded.delete(blob);

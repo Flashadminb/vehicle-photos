@@ -8,10 +8,15 @@ import { claimDueJobs, completeJob, failJob, enqueue, type JobRow } from './jobs
 import { aiForThai, applyOcrResult, decideRoute, googleVision, ocrImageResponse, resultFromText, signedImageUrl, SKIP_PLATE_SCORE, visionCap, visionUsage, type OcrKind } from './ocr';
 import { evictCache, getCache } from './cache';
 import { audit } from './audit';
+import { runTrashJob } from './drivetrash';
 
 export async function runJob(env: Env, drive: DriveClient, job: JobRow, baseUrl = ''): Promise<void | 'deferred'> {
   if (job.kind === 'rename_folder') {
     await syncRoundFolderName(env, drive, job.ref_id);
+    return;
+  }
+  if (job.kind === 'drive_trash') {
+    await runTrashJob(env, drive, job.ref_id);
     return;
   }
   if (job.kind === 'move_replaced') {

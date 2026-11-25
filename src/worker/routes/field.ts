@@ -50,6 +50,8 @@ field.get('/bootstrap', async (c) => {
       imageDisplayEdge: settings.imageDisplayEdge,
       imageOriginalEdge: settings.imageOriginalEdge,
       cameraMaxEdge: settings.cameraMaxEdge,
+      // Effective only while OCR is switched on.
+      ocrHighRes: settings.ocrHighRes && settings.ocrProvider !== 'none',
     },
     driveMode: isDemo(c.env) ? 'demo' : 'google',
     cacheEnabled: !!c.env.CACHE,

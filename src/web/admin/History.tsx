@@ -256,6 +256,7 @@ function storageLabel(r: SetRow) {
   pills.push(r.imagesAllowed ? <span key="r" className="pill pill-info">ล่าสุด</span> : <span key="r" className="pill">เก่า · ดูใน Drive</span>);
   if (r.hidden) pills.push(<span key="h" className="pill pill-warn">ซ่อนอยู่</span>);
   if (r.removed) pills.push(<span key="x" className="pill pill-bad">ลบจากประวัติแล้ว</span>);
+  if (r.driveTrashed) pills.push(<span key="t" className="pill pill-bad" title="รูปอยู่ในถังขยะ Google Drive (กู้คืนได้ภายใน 30 วัน)">รูปอยู่ในถังขยะ</span>);
   if (r.status !== 'finalized') pills.push(<span key="s" className="pill pill-warn">{r.status === 'open' ? 'กำลังถ่าย' : 'ถูกทิ้งไว้'}</span>);
   return <div className="pills">{pills}</div>;
 }
@@ -582,6 +583,66 @@ function SetDetails({ id, onClose, onChanged }: { id: string; onClose: () => voi
             )}
             <span className="small muted">การซ่อน/ลบมีผลกับทั้งชุด และไม่ลบอะไรออกจาก Google Drive</span>
           </div>
+
+          {me.can('drive.trash') && d.set.status !== 'open' && d.drive.folderId && (
+            <section className="card section details-danger">
+              <h3>พื้นที่ Google Drive</h3>
+              {d.driveTrashedAt ? (
+                <>
+                  <p className="small">
+                    รูปของชุดนี้ถูกย้ายไปถังขยะ Drive เมื่อ {formatBangkok(d.driveTrashedAt)} · กู้คืนได้ภายใน 30 วัน (หลังจากนั้น Google ลบถาวรเอง)
+                  </p>
+                  <button
+                    className="btn"
+                    disabled={busy}
+                    onClick={async () => {
+                      setBusy(true);
+                      try {
+                        await api('POST', `/api/admin/sets/${id}/drive-restore`);
+                        setMsg('กู้คืนรูปจากถังขยะ Drive แล้ว');
+                        onChanged();
+                        reload();
+                      } catch (e) {
+                        setMsg((e as Error).message);
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    กู้คืนรูปจากถังขยะ
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="small muted">
+                    ย้ายโฟลเดอร์รูปของชุดนี้ไปถังขยะ Google Drive เพื่อคืนพื้นที่ ข้อมูลชุด (ทะเบียน เวลา ผู้ถ่าย) ยังอยู่ในประวัติ กู้คืนได้ภายใน 30 วัน
+                  </p>
+                  <button
+                    className="btn btn-danger"
+                    disabled={busy}
+                    onClick={async () => {
+                      const typed = prompt(`พิมพ์รหัสชุด ${d.set.publicId} เพื่อยืนยันย้ายรูปทั้งหมดของชุดนี้ไปถังขยะ Drive`);
+                      if (typed == null) return;
+                      if (typed.trim().toUpperCase() !== d.set.publicId.toUpperCase()) return setMsg('รหัสชุดไม่ตรง ยกเลิกแล้ว');
+                      setBusy(true);
+                      try {
+                        await api('POST', `/api/admin/sets/${id}/drive-trash`);
+                        setMsg('ย้ายรูปไปถังขยะ Drive แล้ว');
+                        onChanged();
+                        reload();
+                      } catch (e) {
+                        setMsg((e as Error).message);
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    ย้ายรูปชุดนี้ไปถังขยะ Drive
+                  </button>
+                </>
+              )}
+            </section>
+          )}
         </div>
       )}
     </Modal>

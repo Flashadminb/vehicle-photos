@@ -61,6 +61,8 @@ export interface AppSettings {
   dbQuotaBytes: number;
   dbThresholdPct: number;
   keepOriginals: boolean;
+  /** Upload a sharper copy for steps whose photo is read by OCR (slip / plate), even when originals are off. */
+  ocrHighRes: boolean;
   /** Longest edge (px) of the watermarked display copy stored in Drive. */
   imageDisplayEdge: number;
   /** Longest edge (px) of the original copy (when originals are kept). */
@@ -97,7 +99,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   dbThresholdPct: 70,
   keepOriginals: false,
   imageDisplayEdge: 1280,
-  imageOriginalEdge: 2560,
+  imageOriginalEdge: 2048,
+  ocrHighRes: true,
   cameraMaxEdge: 1920,
   ocrProvider: 'none',
   visionMonthlyFree: 1000,
@@ -119,7 +122,7 @@ export interface FieldBootstrap {
   translations: Record<string, Record<string, string>>;
   settings: Pick<
     AppSettings,
-    'unknownPlateLabel' | 'defaultLanguage' | 'fallbackLanguage' | 'pinLockEnabled' | 'pinLockMinutes' | 'ocrBlocksDone' | 'keepOriginals' | 'imageDisplayEdge' | 'imageOriginalEdge' | 'cameraMaxEdge'
+    'unknownPlateLabel' | 'defaultLanguage' | 'fallbackLanguage' | 'pinLockEnabled' | 'pinLockMinutes' | 'ocrBlocksDone' | 'keepOriginals' | 'imageDisplayEdge' | 'imageOriginalEdge' | 'cameraMaxEdge' | 'ocrHighRes'
   >;
   driveMode: 'google' | 'demo';
   /** False when R2 is not configured: the phone then skips uploading cache copies. */
@@ -195,6 +198,8 @@ export interface SetRow {
   driveUrl: string | null;
   hidden: boolean;
   removed: boolean;
+  /** Photos moved to the Drive trash (Free up space). Metadata stays. */
+  driveTrashed: boolean;
   imagesAllowed: boolean;
 }
 

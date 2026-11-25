@@ -124,6 +124,24 @@ export class DemoDrive implements DriveClient {
     this.log('shareWithUser', id, email, role);
   }
 
+  async setTrashed(id: string, trashed: boolean) {
+    this.log('setTrashed', id, trashed);
+    // Trashing a folder trashes its contents (like Drive).
+    await this.env.DB.prepare(
+      `WITH RECURSIVE tree(id) AS (SELECT ?1 UNION ALL SELECT f.id FROM demo_drive_files f JOIN tree t ON f.parent_id = t.id)
+       UPDATE demo_drive_files SET trashed = ?2 WHERE id IN (SELECT id FROM tree)`,
+    )
+      .bind(id, trashed ? 1 : 0)
+      .run();
+  }
+
+  async storageQuota() {
+    const r = await this.env.DB.prepare(
+      `SELECT COALESCE(SUM(CASE WHEN trashed = 0 THEN size END), 0) AS used, COALESCE(SUM(CASE WHEN trashed = 1 THEN size END), 0) AS trash FROM demo_drive_files`,
+    ).first<{ used: number; trash: number }>();
+    return { usage: (r?.used ?? 0) + (r?.trash ?? 0), limit: 15 * 1024 ** 3, usageInDrive: r?.used ?? 0, usageInTrash: r?.trash ?? 0 };
+  }
+
   folderUrl(id: string) {
     return `/api/admin/demo-drive/folders/${encodeURIComponent(id)}`;
   }

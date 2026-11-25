@@ -141,3 +141,5 @@
 .fa-vf-flash { position: absolute; inset: 0; background: #fff; animation: fa-shutter 0.25s ease-out forwards; pointer-events: none; }
 @keyframes fa-shutter { from { opacity: 0.85; } to { opacity: 0; } }
 .fa-current-photo.is-compact img { width: 56px; height: 56px; }
+/* Slip (document) guide: a wide band for the printed plate line. */
+.fa-vf-guide.is-doc { left: 6%; right: 6%; aspect-ratio: 5 / 1; }
