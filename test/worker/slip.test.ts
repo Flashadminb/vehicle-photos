@@ -115,3 +115,15 @@ describe('step frame and photo size options', () => {
     await publishWorkflow(testEnv, before.steps, 'restore', admin.user.id, Date.now());
   });
 });
+
+describe('slip: any registration before a province', () => {
+  it('reads a long number followed by a province', () => {
+    expect(extractSlipPlate('Proof of Van Dispatching\n725067723224(พระนครศรีอยุธยา)\n2026-11-25')).toEqual({ plate: '725067723224', province: 'พระนครศรีอยุธยา' });
+    // OCR spacing and a slightly misread province still work.
+    expect(extractSlipPlate('7250 6772 3224 (พระนครศรีอยุรยา)')).toEqual({ plate: '725067723224', province: 'พระนครศรีอยุธยา' });
+  });
+  it('ignores brackets that are not a province, and short/letter-only tokens', () => {
+    expect(extractSlipPlate('SAM1VFKD36 (ตัวอย่างเอกสาร)')).toBeNull();
+    expect(extractSlipPlate('ABC (ชลบุรี)')).toBeNull();
+  });
+});

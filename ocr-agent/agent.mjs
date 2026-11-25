@@ -7,7 +7,7 @@ import { createInterface } from 'node:readline';
 import { hostname } from 'node:os';
 import { readDocument, readPlate, shutdown } from './plate.mjs';
 
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 const cfgFile = new URL('./config.json', import.meta.url);
 const exampleFile = new URL('./config.example.json', import.meta.url);
 

@@ -525,7 +525,17 @@ export function parseSlip(text) {
     return { plate: `${m[1].replace(/\s/g, '')} ${m[2]}`, province, provinceText: m[3].replace(/\s/g, '') };
   }
   const n = /(?:^|\D)(\d{2})\s*-\s*(\d{4})\s*[(（]\s*([\u0E00-\u0E7F\s]{3,30}?)\s*[)）]/.exec(t);
-  return n ? { plate: `${n[1]}-${n[2]}`, province: matchProvince(n[3]), provinceText: n[3].replace(/\s/g, '') } : null;
+  if (n) return { plate: `${n[1]}-${n[2]}`, province: matchProvince(n[3]), provinceText: n[3].replace(/\s/g, '') };
+  // Any other registration printed before a province, e.g. "725067723224(พระนครศรีอยุธยา)".
+  // Accepted only when the bracket holds a real province.
+  // The token right before the bracket; groups of digits split by OCR spaces are joined.
+  const g = /((?:\d+ )*[0-9A-Za-zก-ฮ-]*\d[0-9A-Za-zก-ฮ-]*)\s*[(（]\s*([\u0E00-\u0E7F\s]{3,30}?)\s*[)）]/g;
+  for (const m of t.matchAll(g)) {
+    const province = matchProvince(m[2]);
+    const id = m[1].replace(/\s+/g, '').replace(/^-+|-+$/g, '');
+    if (province && id.length >= 3 && id.length <= 20 && (id.match(/\d/g)?.length ?? 0) >= 3) return { plate: id, province, provinceText: m[2].replace(/\s/g, '') };
+  }
+  return null;
 }
 
 /**
