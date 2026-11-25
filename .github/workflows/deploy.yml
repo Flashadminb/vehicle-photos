@@ -40,6 +40,8 @@ jobs:
           # Downloadable Local OCR program (no node_modules, no secrets).
           mkdir -p dist/downloads
           (cd ocr-agent && zip -qr ../dist/downloads/ocr-agent.zip . -x 'node_modules/*' 'config.json' 'debug/*' '.tesscache/*')
+          # Files the installed programs fetch to update themselves.
+          node scripts/agent-manifest.mjs
       - name: Apply database migrations
         run: npx wrangler d1 migrations apply DB --remote
       - name: Deploy Worker

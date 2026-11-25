@@ -57,6 +57,14 @@ export function OcrPage() {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [newName, setNewName] = useState('');
   const [newToken, setNewToken] = useState<{ name: string; token: string } | null>(null);
+  // Latest Local OCR version (installed programs update themselves to it within ~3 hours).
+  const [latest, setLatest] = useState<string | null>(null);
+  useEffect(() => {
+    fetch('/downloads/agent/manifest.json', { cache: 'no-store' })
+      .then((r) => (r.ok ? (r.json() as Promise<{ version?: string }>) : null))
+      .then((m) => setLatest(m?.version ?? null))
+      .catch(() => undefined);
+  }, []);
   const canManage = me.can('drive.manage');
 
   async function load() {
@@ -211,7 +219,16 @@ export function OcrPage() {
                   <td className="small">{a.last_seen_at ? formatBangkok(a.last_seen_at) : 'ยังไม่เคยเชื่อมต่อ'}</td>
                   <td>{a.working ? <span className="pill pill-info"><span className="spinner" aria-hidden /> {a.working}</span> : <span className="muted small">ว่าง</span>}</td>
                   <td>{a.jobs_done.toLocaleString()} ป้าย</td>
-                  <td className="small mono">{a.version ?? ''}</td>
+                  <td className="small mono">
+                    {a.version ?? ''}{' '}
+                    {latest && a.version && (a.version.split(' ')[0] === latest ? (
+                      <span className="pill pill-ok tiny">ล่าสุด</span>
+                    ) : (
+                      <span className="pill pill-warn tiny" title="เวอร์ชัน 1.4.0 ขึ้นไปอัปเดตตัวเองเมื่อเปิดเครื่อง/ทุก 3 ชม. · ต่ำกว่านั้นต้องอัปเดตด้วยมือ 1 ครั้ง">
+                        รออัปเดต → {latest}
+                      </span>
+                    ))}
+                  </td>
                   <td>
                     {canManage && (
                       <div className="row-actions">

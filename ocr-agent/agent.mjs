@@ -6,8 +6,9 @@ import { existsSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { hostname } from 'node:os';
 import { readDocument, readPlate, shutdown } from './plate.mjs';
+import { selfUpdate } from './update.mjs';
 
-const VERSION = '1.3.0';
+const VERSION = '1.4.0';
 const cfgFile = new URL('./config.json', import.meta.url);
 const exampleFile = new URL('./config.example.json', import.meta.url);
 
@@ -87,7 +88,21 @@ console.log(`Local OCR v${VERSION} — เชื่อมต่อ ${SERVER}`);
 console.log('กำลังเตรียม OpenCV + Tesseract (ครั้งแรกอาจใช้เวลาสักครู่)…');
 let failures = 0;
 let announcedIdle = false;
+// Self-update check: at start, then every 3 hours, and only between jobs. config.json "autoUpdate": false turns it off.
+const AUTO_UPDATE = cfg.autoUpdate !== false && process.env.VP_AUTO_UPDATE !== '0';
+let nextUpdateCheck = 0;
 while (!stopping) {
+  if (AUTO_UPDATE && Date.now() >= nextUpdateCheck) {
+    nextUpdateCheck = Date.now() + 3 * 3600_000;
+    try {
+      if (await selfUpdate(SERVER, VERSION, (m) => console.log(`[${now()}] ${m}`))) {
+        await shutdown();
+        process.exit(0); // the start script starts the new version in a few seconds
+      }
+    } catch (e) {
+      console.error(`[${now()}] อัปเดตอัตโนมัติไม่สำเร็จ (${e.message}) — ใช้เวอร์ชันเดิมต่อ`);
+    }
+  }
   try {
     const { job, pollSeconds } = await (await api('POST', '/api/ocr-agent/poll', {})).json();
     failures = 0;
