@@ -604,11 +604,24 @@ admin.get('/ocr/status', requirePermission('sets.view'), async (c) => {
   ).all<any>();
   const { results: queue } = await c.env.DB.prepare(`SELECT status, COUNT(*) AS n FROM jobs WHERE kind = 'ocr' AND status != 'done' GROUP BY status`).all<any>();
   const onlineMs = onlineWindowMs(settings);
+  // What each computer is reading right now, and the latest automatic results (who read what).
+  const { results: working } = await c.env.DB.prepare(
+    `SELECT j.agent_id, r.public_id FROM jobs j JOIN rounds r ON r.id = j.ref_id
+     WHERE j.kind = 'ocr' AND j.status = 'local_running' AND j.next_run_at > ?`,
+  )
+    .bind(now)
+    .all<any>();
+  const { results: recent } = await c.env.DB.prepare(
+    `SELECT p.at, p.source, p.new_text, p.confidence, r.id AS round_id, r.public_id FROM plate_history p JOIN rounds r ON r.id = p.round_id
+     WHERE p.source LIKE 'ocr%' ORDER BY p.id DESC LIMIT 15`,
+  ).all<any>();
+  const workingBy = new Map(working.map((w) => [w.agent_id, w.public_id]));
   return c.json({
+    recent,
     mode: settings.ocrProvider,
     visionKeyConfigured: !!c.env.GOOGLE_VISION_API_KEY,
     vision: { used: await visionUsage(c.env, now), cap: visionCap(settings), free: settings.visionMonthlyFree, capPct: settings.visionCapPct, period: visionPeriod(now).slice(7) },
-    agents: agents.map((a) => ({ ...a, online: !a.disabled && !!a.last_seen_at && now - a.last_seen_at < onlineMs })),
+    agents: agents.map((a) => ({ ...a, online: !a.disabled && !!a.last_seen_at && now - a.last_seen_at < onlineMs, working: workingBy.get(a.id) ?? null })),
     queue: Object.fromEntries(queue.map((q) => [q.status, q.n])),
     pollSeconds: settings.agentPollSeconds,
   });

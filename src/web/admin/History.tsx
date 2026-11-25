@@ -5,6 +5,7 @@ import type { SetListResponse, SetRow } from '../../shared/types';
 import { DateRangePicker, type DateRange } from './DateRangePicker';
 import { useMe } from './context';
 import { exportSetsToExcel } from './excel';
+import { ocrSourceLabel } from './OcrPage';
 
 type Dir = 'first' | 'next' | 'prev' | 'last';
 
@@ -505,7 +506,7 @@ function SetDetails({ id, onClose, onChanged }: { id: string; onClose: () => voi
               <ul className="history-list small">
                 {d.plate.history.map((h: any) => (
                   <li key={h.id}>
-                    {formatBangkok(h.at)} · {h.source === 'manual' ? `แก้ไขโดย ${h.actor_name ?? '?'}` : 'OCR'}: “{h.old_text ?? '—'}” → “{h.new_text ?? '—'}”
+                    {formatBangkok(h.at)} · {h.source === 'manual' ? `แก้ไขโดย ${h.actor_name ?? '?'}` : ocrSourceLabel(h.source)}: “{h.old_text ?? '—'}” → “{h.new_text ?? '—'}”
                   </li>
                 ))}
               </ul>

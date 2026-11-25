@@ -12,6 +12,15 @@ const MODES: { value: OcrProvider; title: string; desc: string }[] = [
   { value: 'google_vision', title: 'Google Vision อย่างเดียว', desc: 'เมื่อถึงเพดาน ป้ายจะพักไว้จนเดือนใหม่ (หรือกดส่งให้ Local OCR)' },
 ];
 
+/** "ocr:local:PC-ออฟฟิศ" → "Local OCR · PC-ออฟฟิศ" */
+export function ocrSourceLabel(source: string): string {
+  if (source === 'ocr:google_vision') return 'Google Vision';
+  if (source === 'ocr:aiforthai') return 'AI for Thai';
+  if (source.startsWith('ocr:local:')) return `Local OCR · ${source.slice(10)}`;
+  if (source === 'ocr') return 'OCR';
+  return source;
+}
+
 const QUEUE_LABEL: Record<string, string> = {
   pending: 'รอเริ่ม',
   running: 'กำลังส่ง Vision',
@@ -168,6 +177,7 @@ export function OcrPage() {
                 <th>เครื่อง</th>
                 <th>สถานะ</th>
                 <th>ติดต่อล่าสุด</th>
+                <th>กำลังอ่าน</th>
                 <th>อ่านไปแล้ว</th>
                 <th>เวอร์ชัน</th>
                 <th />
@@ -179,6 +189,7 @@ export function OcrPage() {
                   <td><strong>{a.name}</strong></td>
                   <td>{a.disabled ? <span className="pill">ปิดใช้งาน</span> : a.online ? <span className="pill pill-ok">● เปิดอยู่</span> : <span className="pill">ออฟไลน์</span>}</td>
                   <td className="small">{a.last_seen_at ? formatBangkok(a.last_seen_at) : 'ยังไม่เคยเชื่อมต่อ'}</td>
+                  <td>{a.working ? <span className="pill pill-info"><span className="spinner" aria-hidden /> {a.working}</span> : <span className="muted small">ว่าง</span>}</td>
                   <td>{a.jobs_done.toLocaleString()} ป้าย</td>
                   <td className="small mono">{a.version ?? ''}</td>
                   <td>
@@ -197,7 +208,7 @@ export function OcrPage() {
               ))}
               {st.agents.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="empty">ยังไม่มีคอม Local OCR</td>
+                  <td colSpan={7} className="empty">ยังไม่มีคอม Local OCR</td>
                 </tr>
               )}
             </tbody>
@@ -248,6 +259,42 @@ export function OcrPage() {
             </div>
           </div>
         )}
+      </section>
+
+      <section className="card section">
+        <h2>ผลการอ่านล่าสุด</h2>
+        <p className="small muted">ใครอ่านป้ายไหน: Google Vision หรือคอมเครื่องไหน (อัปเดตทุก 15 วินาที)</p>
+        <div className="table-scroll">
+          <table className="table table-compact">
+            <thead>
+              <tr>
+                <th>เวลา</th>
+                <th>ชุด</th>
+                <th>ผลที่อ่านได้</th>
+                <th>ความมั่นใจ</th>
+                <th>อ่านโดย</th>
+              </tr>
+            </thead>
+            <tbody>
+              {st.recent.map((r: any, i: number) => (
+                <tr key={i}>
+                  <td className="nowrap small">{formatBangkok(r.at)}</td>
+                  <td className="mono small">{r.public_id}</td>
+                  <td>{r.new_text ? <strong>{r.new_text}</strong> : <span className="muted">อ่านไม่ได้ / ไม่แน่ใจ</span>}</td>
+                  <td className="small">{r.confidence != null ? `${Math.round(r.confidence * 100)}%` : '—'}</td>
+                  <td>
+                    <span className={`pill ${r.source.startsWith('ocr:local:') ? 'pill-ok' : 'pill-info'}`}>{ocrSourceLabel(r.source)}</span>
+                  </td>
+                </tr>
+              ))}
+              {st.recent.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="empty">ยังไม่มีผลการอ่าน</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section className="card section">
