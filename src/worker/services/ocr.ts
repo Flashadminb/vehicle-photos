@@ -238,7 +238,7 @@ export async function applyOcrResult(
   if (!round) return;
   // A plate-photo reading this unsure is noise, not a plate: keep it only as raw text for the admin.
   const tooUnsure = kind === 'plate' && result.confidence != null && result.confidence < MIN_PLATE_CONFIDENCE;
-  const plate = result.plate && !tooUnsure ? result.plate.normalize('NFC').replace(/\s+/g, ' ').trim().slice(0, 30) : null;
+  const plate = result.plate && !tooUnsure ? result.plate.normalize('NFC').replace(/\s+/g, ' ').trim().slice(0, 60) : null;
   let score = ocrScore(result.confidence, kind);
   // Two readings (slip + plate photo) that agree reinforce each other.
   if (plate && round.plate_source === 'ocr' && plateCore(round.plate_text) === plateCore(plate)) score = Math.max(score, round.plate_ocr_score ?? 0) + 0.05;

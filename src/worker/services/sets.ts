@@ -128,7 +128,7 @@ export async function updatePlate(env: Env, user: AuthUser, id: string, text: st
   if (!can(user.role, 'sets.editPlate')) throw forbidden();
   const r = await loadVisibleSet(env, user, id);
   const clean = (text ?? '').normalize('NFC').replace(/\s+/g, ' ').trim();
-  if (clean.length > 30) throw badRequest('Plate text is too long.');
+  if (clean.length > 60) throw badRequest('ทะเบียนยาวเกิน 60 ตัวอักษร');
   if (clean && !/[0-9]/.test(clean)) throw badRequest('ทะเบียนต้องมีตัวเลข');
   if (r.status === 'open') throw conflict('round_open', 'รอให้ชุดรูปบันทึกเสร็จก่อนจึงแก้ทะเบียนได้');
   await env.DB.batch([

@@ -22,6 +22,8 @@ export interface HistoryQuery {
   workflowId?: string;
   /** Only sets taken by this user. */
   operatorId?: string;
+  /** 'missing' = no plate yet ("ไม่ระบุ"); 'unsure' = automatic reading below 80 %. */
+  plate?: 'missing' | 'unsure';
 }
 
 /**
@@ -82,6 +84,8 @@ export function buildWhere(user: AuthUser, q: HistoryQuery): { sql: string; bind
     where.push('r.workflow_id = ?');
     binds.push(q.workflowId);
   }
+  if (q.plate === 'missing') where.push(`(r.plate_text IS NULL OR r.plate_text = '')`);
+  else if (q.plate === 'unsure') where.push(`r.plate_source = 'ocr' AND COALESCE(r.plate_confidence, 0) < 0.8`);
   if (q.operatorId) {
     where.push('r.operator_id = ?');
     binds.push(q.operatorId);

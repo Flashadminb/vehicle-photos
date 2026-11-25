@@ -124,6 +124,10 @@ function parseHistoryQuery(q: Record<string, string>): HistoryQuery {
   if (q.q) out.q = q.q;
   if (q.workflowId) out.workflowId = str(q.workflowId, 'workflowId', { max: 40 });
   if (q.operatorId) out.operatorId = str(q.operatorId, 'operatorId', { max: 64 });
+  if (q.plate) {
+    if (!['missing', 'unsure'].includes(q.plate)) throw badRequest('Invalid plate filter.');
+    out.plate = q.plate as HistoryQuery['plate'];
+  }
   if (q.status) {
     if (!['finalized', 'open', 'abandoned', 'all'].includes(q.status)) throw badRequest('Invalid status filter.');
     out.status = q.status as HistoryQuery['status'];

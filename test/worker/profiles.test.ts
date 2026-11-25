@@ -73,4 +73,18 @@ describe('capture profiles (รูปแบบการถ่าย)', () => {
     expect(job.status).toBe('local');
     await admin.json('POST', '/api/admin/workflow', { workflowId: 'default', steps: before.steps });
   });
+
+  it('history can show only sets whose plate is still "ไม่ระบุ" or unsure', async () => {
+    const { client: admin } = await loggedIn('admin', 'super_admin');
+    const op = await loggedIn('field', 'operator');
+    const { roundId } = await captureWithBootstrap(op.client);
+    await testEnv.DB.prepare(`UPDATE rounds SET status = 'finalized' WHERE id = ?`).bind(roundId).run();
+    const missing = await admin.json('GET', `/api/admin/sets?status=all&plate=missing&operatorId=${op.user.id}`);
+    expect(missing.body.rows.map((r: any) => r.id)).toEqual([roundId]);
+    expect((await admin.json('PUT', `/api/admin/sets/${roundId}/plate`, { plate: '725067723224 (พระนครศรีอยุธยา)' })).status).toBe(200);
+    expect((await admin.json('GET', `/api/admin/sets?status=all&plate=missing&operatorId=${op.user.id}`)).body.total).toBe(0);
+    await testEnv.DB.prepare(`UPDATE rounds SET plate_source = 'ocr', plate_confidence = 0.6 WHERE id = ?`).bind(roundId).run();
+    expect((await admin.json('GET', `/api/admin/sets?status=all&plate=unsure&operatorId=${op.user.id}`)).body.total).toBe(1);
+    expect((await admin.json('GET', '/api/admin/sets?plate=bogus')).status).toBe(400);
+  });
 });

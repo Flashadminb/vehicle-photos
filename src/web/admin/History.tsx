@@ -24,6 +24,7 @@ export function History() {
   /** Filters: capture profile ("รูปแบบการถ่าย") and the person who took the set. */
   const [workflowId, setWorkflowId] = useState('');
   const [operatorId, setOperatorId] = useState('');
+  const [plateFilter, setPlateFilter] = useState('');
   const [profiles, setProfiles] = useState<{ id: string; name: string }[]>([]);
   const [operators, setOperators] = useState<{ id: string; display_name: string; username: string; workflow_id: string }[]>([]);
   useEffect(() => {
@@ -70,6 +71,7 @@ export function History() {
       if (q.trim()) params.set('q', q.trim());
       if (workflowId) params.set('workflowId', workflowId);
       if (operatorId) params.set('operatorId', operatorId);
+      if (plateFilter) params.set('plate', plateFilter);
       if (cursor) params.set('cursor', cursor);
       try {
         const res = await api<SetListResponse>('GET', `/api/admin/sets?${params}`);
@@ -84,7 +86,7 @@ export function History() {
         if (id === reqId.current) setLoading(false);
       }
     },
-    [pageSize, status, visibility, sort, range, startTime, endTime, q, timeError, workflowId, operatorId],
+    [pageSize, status, visibility, sort, range, startTime, endTime, q, timeError, workflowId, operatorId, plateFilter],
   );
 
   // Any filter change restarts at the first page (debounced for typing).
@@ -114,6 +116,7 @@ export function History() {
       if (q.trim()) params.set('q', q.trim());
       if (workflowId) params.set('workflowId', workflowId);
       if (operatorId) params.set('operatorId', operatorId);
+      if (plateFilter) params.set('plate', plateFilter);
       if (cursor) params.set('cursor', cursor);
       const res: SetListResponse = await api<SetListResponse>('GET', `/api/admin/sets?${params}`);
       ids.push(...res.rows.map((r) => r.id));
@@ -195,6 +198,14 @@ export function History() {
                   {o.display_name} ({o.username})
                 </option>
               ))}
+          </select>
+        </label>
+        <label className="field">
+          <span>ทะเบียน</span>
+          <select className="input" value={plateFilter} onChange={(e) => setPlateFilter(e.target.value)}>
+            <option value="">ทั้งหมด</option>
+            <option value="missing">ไม่ระบุ (ยังไม่มีทะเบียน)</option>
+            <option value="unsure">อ่านอัตโนมัติแบบไม่แน่ใจ (⚠ ต่ำกว่า 80%)</option>
           </select>
         </label>
         <label className="field">
@@ -348,6 +359,10 @@ export function History() {
                   onDetails={() => setDetails(r.id)}
                   onDelete={me.can('sets.remove') ? () => setDeleting([r.id]) : undefined}
                   profileName={profiles.length > 1 ? profiles.find((p) => p.id === r.workflowId)?.name : undefined}
+                  canEditPlate={me.can('sets.editPlate')}
+                  onPlateSaved={(plate) =>
+                    setData((d) => (d ? { ...d, rows: d.rows.map((x) => (x.id === r.id ? { ...x, plate, plateDisplay: plate || x.plateDisplay, plateSource: plate ? 'manual' : 'none', plateConfidence: null } : x)) } : d))
+                  }
                 />
               ))}
               {!loading && rows.length === 0 && (
@@ -367,7 +382,7 @@ export function History() {
         </nav>
       </section>
 
-      {viewing && <SetViewer id={viewing} onClose={() => setViewing(null)} />}
+      {viewing && <SetViewer id={viewing} onClose={() => setViewing(null)} onChanged={() => void load('first')} />}
       {details && <SetDetails id={details} onClose={() => setDetails(null)} onChanged={() => void load('first')} />}
     </div>
   );
@@ -385,7 +400,27 @@ function storageLabel(r: SetRow) {
   return <div className="pills">{pills}</div>;
 }
 
-function Row({ r, checked, onCheck, onView, onDetails, onDelete, profileName }: { r: SetRow; checked: boolean; onCheck: () => void; onView: () => void; onDetails: () => void; onDelete?: () => void; profileName?: string }) {
+function Row({
+  r,
+  checked,
+  onCheck,
+  onView,
+  onDetails,
+  onDelete,
+  profileName,
+  canEditPlate,
+  onPlateSaved,
+}: {
+  r: SetRow;
+  checked: boolean;
+  onCheck: () => void;
+  onView: () => void;
+  onDetails: () => void;
+  onDelete?: () => void;
+  profileName?: string;
+  canEditPlate?: boolean;
+  onPlateSaved?: (plate: string | null) => void;
+}) {
   const complete = r.activeCount >= r.requiredCount;
   return (
     <tr className={checked ? 'is-selected' : ''}>
@@ -395,7 +430,13 @@ function Row({ r, checked, onCheck, onView, onDetails, onDelete, profileName }: 
       <td className="nowrap">{formatBangkok(r.startedAt)}</td>
       <td className="mono nowrap">{r.publicId}</td>
       <td className="nowrap">
-        {r.plate ? <strong>{r.plate}</strong> : <span className="muted">{r.plateDisplay}</span>}
+        {canEditPlate && r.status !== 'open' ? (
+          <PlateEdit setId={r.id} plate={r.plate} placeholder={r.plateDisplay} onSaved={(p) => onPlateSaved?.(p)} />
+        ) : r.plate ? (
+          <strong>{r.plate}</strong>
+        ) : (
+          <span className="muted">{r.plateDisplay}</span>
+        )}
         {r.plateSource === 'manual' && <span className="pill pill-info tiny" title="แก้ไขโดยผู้ดูแล">แก้ไขแล้ว</span>}
         {r.plateSource === 'ocr' && r.plateConfidence != null && (
           <span
@@ -473,11 +514,27 @@ function Modal({ title, onClose, children, wide }: { title: string; onClose: () 
 }
 
 /** Shows the entire set together (recent sets only). */
-function SetViewer({ id, onClose }: { id: string; onClose: () => void }) {
-  const { d, error } = useSetDetails(id);
+function SetViewer({ id, onClose, onChanged }: { id: string; onClose: () => void; onChanged?: () => void }) {
+  const { d, error, reload } = useSetDetails(id);
+  const me = useMe();
   return (
     <Modal title={d ? `${d.set.publicId} · ${d.set.plateDisplay}` : 'ชุดรูป'} onClose={onClose} wide>
       {error && <p className="banner banner-bad">{error}</p>}
+      {d && me.can('sets.editPlate') && d.set.status !== 'open' && (
+        <div className="viewer-plate">
+          <span className="small muted">ทะเบียน</span>
+          <PlateEdit
+            setId={id}
+            plate={d.set.plate}
+            placeholder={d.set.plateDisplay}
+            startEditing={!d.set.plate}
+            onSaved={() => {
+              reload();
+              onChanged?.();
+            }}
+          />
+        </div>
+      )}
       {!d && !error && <span className="spinner" />}
       {d && !d.imagesAvailable && (
         <div className="banner banner-warn">
@@ -907,5 +964,77 @@ function BulkReread({ ids, onClose, onDone }: { ids: string[]; onClose: () => vo
         </div>
       </div>
     </Modal>
+  );
+}
+
+/** Plate shown as text with ✏️; click to edit in place (Enter saves, Esc cancels). Saved as a manual correction. */
+function PlateEdit({
+  setId,
+  plate,
+  placeholder,
+  startEditing,
+  onSaved,
+}: {
+  setId: string;
+  plate: string | null;
+  placeholder: string;
+  startEditing?: boolean;
+  onSaved: (plate: string | null) => void;
+}) {
+  const [editing, setEditing] = useState(!!startEditing);
+  const [value, setValue] = useState(plate ?? '');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  useEffect(() => setValue(plate ?? ''), [plate]);
+  async function save() {
+    const v = value.trim();
+    if (v === (plate ?? '')) return setEditing(false);
+    setBusy(true);
+    setErr('');
+    try {
+      await api('PUT', `/api/admin/sets/${setId}/plate`, { plate: v });
+      setEditing(false);
+      onSaved(v || null);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  if (!editing) {
+    return (
+      <button type="button" className="plate-edit-view" onClick={() => setEditing(true)} title="คลิกเพื่อแก้ทะเบียน">
+        {plate ? <strong>{plate}</strong> : <span className="muted">{placeholder}</span>}
+        <span className="plate-edit-pen" aria-hidden>✏️</span>
+      </button>
+    );
+  }
+  return (
+    <span className="plate-edit">
+      <input
+        className="input input-sm"
+        value={value}
+        autoFocus
+        maxLength={60}
+        placeholder="เช่น บร 7865 (เพชรบุรี)"
+        aria-label="ทะเบียน"
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') void save();
+          if (e.key === 'Escape') {
+            setValue(plate ?? '');
+            setEditing(false);
+          }
+        }}
+        disabled={busy}
+      />
+      <button type="button" className="btn btn-sm btn-primary" onClick={() => void save()} disabled={busy}>
+        บันทึก
+      </button>
+      <button type="button" className="btn btn-sm" onClick={() => { setValue(plate ?? ''); setEditing(false); }} disabled={busy}>
+        ยกเลิก
+      </button>
+      {err && <span className="small text-bad">{err}</span>}
+    </span>
   );
 }
