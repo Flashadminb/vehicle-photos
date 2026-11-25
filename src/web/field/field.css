@@ -144,3 +144,16 @@
 /* Slip (document) guide: the whole slip, landscape (label inside so it never falls off the viewfinder). */
 .fa-vf-guide.is-doc { left: 4%; right: 4%; aspect-ratio: 3 / 2; border-style: dashed; }
 .fa-vf-guide.is-doc span { bottom: auto; top: 8px; }
+
+/* Photo check right after an in-app shot: big preview, two big buttons. */
+.fa-check {
+  position: fixed; inset: 0; z-index: 60; background: #111; color: #fff;
+  display: flex; flex-direction: column; gap: 12px;
+  padding: max(12px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom));
+  animation: fa-fade 0.15s ease-out;
+}
+.fa-check-head { font-weight: 700; font-size: 18px; text-align: center; }
+.fa-check-img { flex: 1; min-height: 0; width: 100%; object-fit: contain; border-radius: 12px; background: #000; }
+.fa-check-actions { display: grid; grid-template-columns: 1fr 1.4fr; gap: 12px; }
+.fa-check-actions .btn { min-height: 72px; font-size: 20px; border-radius: 18px; }
+@keyframes fa-fade { from { opacity: 0; } }

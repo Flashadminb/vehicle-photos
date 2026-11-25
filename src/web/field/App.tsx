@@ -235,6 +235,8 @@ function Capture({ boot, reload, onSignedOut }: { boot: Boot; reload: () => Prom
   const wantsSharp = !!boot.settings.ocrHighRes && s.workflow.steps.some((x) => x.ocr);
   const camera = useCamera(cameraMode === 'app' && onCaptureStep && !locked, Math.max(boot.settings.cameraMaxEdge ?? 1920, wantsSharp ? 2560 : 0));
   const [shutterBusy, setShutterBusy] = useState(false);
+  /** After an in-app shot: show it big with "Retake" / "Next". The upload already runs in the background. */
+  const [justShot, setJustShot] = useState<{ stepId: string; index: number } | null>(null);
   const [flashKey, setFlashKey] = useState(0);
   useWakeLock(!!s.clientRoundId || camera.status === 'live');
   useEffect(() => {
@@ -253,7 +255,9 @@ function Capture({ boot, reload, onSignedOut }: { boot: Boot; reload: () => Prom
       const blob = await camera.capture();
       vibrate(30);
       setFlashKey((k) => k + 1);
+      const index = s.stepIndex;
       await engine.accept(step.id, blob, 'camera', { captureTime });
+      setJustShot({ stepId: step.id, index });
     } catch {
       cameraInput.current?.click(); // camera hiccup: fall back to the phone's camera app
     } finally {
@@ -294,6 +298,29 @@ function Capture({ boot, reload, onSignedOut }: { boot: Boot; reload: () => Prom
 
   return (
     <>
+      {justShot && s.slots[justShot.stepId]?.previewUrl && (
+        <div className="fa-check" role="dialog" aria-modal="true" aria-labelledby="fa-check-title">
+          <div className="fa-check-head">
+            <span id="fa-check-title">{t('check_photo')} · {steps[justShot.index]?.label}</span>
+          </div>
+          <img className="fa-check-img" src={s.slots[justShot.stepId].previewUrl} alt="" />
+          <div className="fa-check-actions">
+            <button
+              type="button"
+              className="btn btn-lg fa-check-retake"
+              onClick={() => {
+                engine.goTo(justShot.index);
+                setJustShot(null);
+              }}
+            >
+              ↺ {t('retake')}
+            </button>
+            <button type="button" className="btn btn-primary btn-lg fa-check-next" autoFocus onClick={() => setJustShot(null)}>
+              {s.stepIndex >= steps.length ? t('go_to_done') : t('next_step')} →
+            </button>
+          </div>
+        </div>
+      )}
       <CaptureView
         t={t}
         appName={t('app_name')}

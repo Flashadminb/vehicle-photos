@@ -60,6 +60,9 @@ export const TRANSLATION_KEYS = [
   'native_camera',
   'in_app_camera',
   'doc_guide',
+  'check_photo',
+  'next_step',
+  'go_to_done',
 ] as const;
 
 export type TranslationKey = (typeof TRANSLATION_KEYS)[number];
@@ -79,6 +82,9 @@ export const BUILTIN_TRANSLATIONS: Record<string, Record<TranslationKey, string>
     required: 'Required',
     skip_step: 'Skip this step',
     retake: 'Retake',
+    check_photo: 'Check the photo',
+    next_step: 'Next',
+    go_to_done: 'Done',
     replace_photo: 'Replace',
     review_title: 'Check the set',
     review_hint: 'Tap a step to retake it before saving.',
@@ -136,6 +142,9 @@ export const BUILTIN_TRANSLATIONS: Record<string, Record<TranslationKey, string>
     required: 'บังคับ',
     skip_step: 'ข้ามขั้นตอนนี้',
     retake: 'ถ่ายใหม่',
+    check_photo: 'ตรวจรูป',
+    next_step: 'ถัดไป',
+    go_to_done: 'ไปหน้าเสร็จสิ้น',
     replace_photo: 'เปลี่ยนรูป',
     review_title: 'ตรวจสอบชุดรูป',
     review_hint: 'แตะขั้นตอนเพื่อถ่ายใหม่ก่อนบันทึก',
