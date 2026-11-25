@@ -29,13 +29,16 @@ describe('extractSlipPlate', () => {
 
   it('falls back to whatever is printed on the plate line (any format), with lower confidence', async () => {
     const { resultFromText } = await import('../../src/worker/services/ocr');
-    const raw = 'Proof of Van Dispatching\nZ9/X-77 (ทดสอบ) 2026-11-25\nSAM1VFME63';
+    const raw = 'Proof of Van Dispatching\nZ9/X-777 2026-11-25\nSAM1VFME63';
     const r = resultFromText(raw, 0.93, 'document');
-    expect(r.plate).toBe('Z9/X-77 (ทดสอบ)');
+    expect(r.plate).toBe('Z9/X-777');
     expect(r.confidence).toBe(0.75); // capped: not a recognised plate(province)
     expect(resultFromText('Proof of Van Dispatching\nAB 1234 2026-11-25', 0.5, 'document').plate).toBe('AB1234');
     // OCR noise from a wrong rotation is not taken: too few digits.
     expect(resultFromText('Proof of Van Dispatching\nขยง (งจ)\n40 (ค) 2026-11-25', 0.9, 'document').plate).toBeNull();
+    // Never the barcode code under the bars, never a made-up province from an upside-down read.
+    expect(resultFromText('Proof of Van Dispatching\nBKK1VFAX09', 0.9, 'document').plate).toBeNull();
+    expect(resultFromText('ร 9-ร 096ร (กรงเทรา฿) SZ-11-9202', 0.9, 'document').plate).toBeNull();
     // Strict matches keep their higher confidence.
     expect(resultFromText('700-9296(กรุงเทพ) 2026-11-25', 0.9, 'document')).toMatchObject({ plate: '700-9296 (กรุงเทพมหานคร)', confidence: 0.9 });
     // Nothing on a plate line: nothing invented.

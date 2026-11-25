@@ -105,8 +105,11 @@ export function slipLineFallback(raw: string): { plate: string; province: string
     // Any format, but it must look like an ID: at least 3 digits (rejects OCR noise like "ขยง" or "40").
     if ((id.match(/\d/g)?.length ?? 0) < 3) continue;
     const thaiRaw = inside.replace(/[^\u0E00-\u0E7F]/g, '');
-    const thai = thaiRaw.length >= 3 ? thaiRaw : '';
-    return { plate: prettySlipId(id), province: matchProvince(thai) ?? thai, fallback: true };
+    const province = thaiRaw.length >= 3 ? matchProvince(thaiRaw) : null;
+    // Guard against OCR noise (e.g. an upside-down read, or the barcode code under the bars):
+    // with a bracket the province must be real; without one the line must also carry the date.
+    if (open >= 0 ? !province : !SLIP_DATE.test(line)) continue;
+    return { plate: prettySlipId(id), province: province ?? '', fallback: true };
   }
   return null;
 }

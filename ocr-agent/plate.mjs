@@ -45,6 +45,30 @@ async function getDigitWorker() {
   return digitWorkerPromise;
 }
 
+let docWorkerPromise;
+/**
+ * Slips mix Thai with Latin letters and digits ("Proof of Van Dispatching", "700-9296"):
+ * Thai + English together reads them much better than Thai alone. Both models are copied
+ * into one folder because Tesseract loads every language from a single path.
+ */
+async function getDocWorker() {
+  docWorkerPromise ??= (async () => {
+    const fs = await import('node:fs/promises');
+    const dir = join(here, '.tesscache', 'lang-tha-eng');
+    await fs.mkdir(dir, { recursive: true });
+    for (const l of ['tha', 'eng']) {
+      const dst = join(dir, `${l}.traineddata.gz`);
+      try {
+        await fs.access(dst);
+      } catch {
+        await fs.copyFile(join(here, 'node_modules', '@tesseract.js-data', l, '4.0.0_best_int', `${l}.traineddata.gz`), dst);
+      }
+    }
+    return createWorker(['tha', 'eng'], OEM.LSTM_ONLY, { langPath: dir, gzip: true, cachePath: join(here, '.tesscache') });
+  })();
+  return docWorkerPromise;
+}
+
 let workerPromise;
 async function getWorker() {
   workerPromise ??= (async () => {
@@ -560,8 +584,9 @@ function slipLineFallback(raw) {
     const id = (idMatch?.[1] ?? '').replace(/\s+/g, '').replace(/^[-./]+|[-./]+$/g, '').slice(-24);
     if ((id.match(/\d/g)?.length ?? 0) < 3) continue;
     const thaiRaw = inside.replace(/[^\u0E00-\u0E7F]/g, '');
-    const thai = thaiRaw.length >= 3 ? thaiRaw : '';
-    return { plate: id.replace(/([ก-ฮ])(?=\d)/g, '$1 '), province: matchProvince(thai), provinceText: thai, fallback: true };
+    const province = thaiRaw.length >= 3 ? matchProvince(thaiRaw) : null;
+    if (open >= 0 ? !province : !SLIP_DATE.test(line)) continue;
+    return { plate: id.replace(/([ก-ฮ])(?=\d)/g, '$1 '), province, provinceText: thaiRaw, fallback: true };
   }
   return null;
 }
@@ -634,15 +659,19 @@ function stripsBeside(b, W, H) {
   };
   const out = [];
   // The text may have merged into the barcode blob, so each strip straddles the blob's edge.
-  if (!b.vertical) {
-    const inn = b.h * 0.4, outr = b.h * 0.6, len = b.w * 1.9;
-    out.push({ box: clamp(b.x - b.w * 0.1, b.y - outr, len, inn + outr), rot: 0 });
-    out.push({ box: clamp(b.x + b.w * 1.1 - len, b.y + b.h - inn, len, inn + outr), rot: 180 });
-  } else {
-    const inn = b.w * 0.4, outr = b.w * 0.6, len = b.h * 1.9;
-    const right = b.x + b.w - inn, left = b.x - outr;
-    out.push({ box: clamp(right, b.y - b.h * 0.1, inn + outr, len), rot: 270 }, { box: clamp(right, b.y + b.h * 1.1 - len, inn + outr, len), rot: 90 });
-    out.push({ box: clamp(left, b.y + b.h * 1.1 - len, inn + outr, len), rot: 90 }, { box: clamp(left, b.y - b.h * 0.1, inn + outr, len), rot: 270 });
+  // First a clean strip that stops just short of the bars (bars confuse the reader), then one that
+  // straddles the edge in case the text merged into the detected barcode area.
+  for (const inn of [-0.03, 0.4]) {
+    if (!b.vertical) {
+      const i = b.h * inn, outr = b.h * 0.6, len = b.w * 1.9;
+      out.push({ box: clamp(b.x - b.w * 0.1, b.y - outr, len, outr + i), rot: 0 });
+      out.push({ box: clamp(b.x + b.w * 1.1 - len, b.y + b.h - i, len, outr + i), rot: 180 });
+    } else {
+      const i = b.w * inn, outr = b.w * 0.6, len = b.h * 1.9;
+      const right = b.x + b.w - i, left = b.x - outr;
+      out.push({ box: clamp(right, b.y - b.h * 0.1, outr + i, len), rot: 270 }, { box: clamp(right, b.y + b.h * 1.1 - len, outr + i, len), rot: 90 });
+      out.push({ box: clamp(left, b.y + b.h * 1.1 - len, outr + i, len), rot: 90 }, { box: clamp(left, b.y - b.h * 0.1, outr + i, len), rot: 270 });
+    }
   }
   return out.filter((s) => s.box);
 }
@@ -679,7 +708,7 @@ export async function readNearBarcode(base, worker, debugDir) {
  */
 export async function readDocument(buffer, { debugDir } = {}) {
   const t0 = Date.now();
-  const worker = await getWorker();
+  const worker = await getDocWorker();
   const base = await sharp(buffer).rotate().toBuffer(); // apply EXIF orientation first
   const attempts = [
     [0, PSM.AUTO], [270, PSM.AUTO], [90, PSM.AUTO], [180, PSM.AUTO],
@@ -744,5 +773,6 @@ export async function readDocument(buffer, { debugDir } = {}) {
 
 export async function shutdown() {
   if (workerPromise) await (await workerPromise).terminate();
+  if (docWorkerPromise) await (await docWorkerPromise).terminate();
   if (digitWorkerPromise) await (await digitWorkerPromise).terminate();
 }
