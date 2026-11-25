@@ -345,7 +345,7 @@ describe('CaptureEngine', () => {
 
   it('reports upload progress and clears it when saved', async () => {
     const seen: number[] = [];
-    server.uploadToDrive = (url: string, blob: Blob, _s?: AbortSignal, onProgress?: (n: number) => void) => {
+    (server as any).uploadToDrive = (url: string, blob: Blob, _s?: AbortSignal, onProgress?: (n: number) => void) => {
       onProgress?.(blob.size / 2);
       return new Promise((r) => setTimeout(() => r(`drive-${url}`), 5));
     };
