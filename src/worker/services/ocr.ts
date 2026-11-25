@@ -71,9 +71,14 @@ export async function reserveVisionCall(env: Env, settings: AppSettings, now = D
 }
 
 // ---------- online Local OCR computers ----------
+/** A computer is "online" if it polled recently; the window always covers at least 2.5 poll intervals. */
+export function onlineWindowMs(settings: AppSettings) {
+  return Math.max(settings.agentOnlineSeconds, settings.agentPollSeconds * 2.5) * 1000;
+}
+
 export async function onlineAgents(env: Env, settings: AppSettings, now = Date.now()) {
   const r = await env.DB.prepare(`SELECT COUNT(*) AS n FROM ocr_agents WHERE disabled = 0 AND last_seen_at > ?`)
-    .bind(now - settings.agentOnlineSeconds * 1000)
+    .bind(now - onlineWindowMs(settings))
     .first<{ n: number }>();
   return r?.n ?? 0;
 }

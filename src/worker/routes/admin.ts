@@ -33,7 +33,7 @@ import { changeVisibility, loadVisibleSet, setDetails, updatePlate, type SetActi
 import { cacheUsage, evictCache, getCache, type CacheKind } from '../services/cache';
 import { audit } from '../services/audit';
 import { processJobs } from '../services/maintenance';
-import { visionCap, visionPeriod, visionUsage } from '../services/ocr';
+import { onlineWindowMs, visionCap, visionPeriod, visionUsage } from '../services/ocr';
 import { getDrive, isDemo, effectiveRoot } from '../drive';
 import { buildAuthUrl, clearToken, exchangeCode, loadToken, oauthRedirectUri, saveToken } from '../drive/google';
 import { syncRoundFolderName } from '../drive/folders';
@@ -603,7 +603,7 @@ admin.get('/ocr/status', requirePermission('sets.view'), async (c) => {
     `SELECT id, name, disabled, created_at, last_seen_at, last_ip, version, jobs_done FROM ocr_agents ORDER BY created_at`,
   ).all<any>();
   const { results: queue } = await c.env.DB.prepare(`SELECT status, COUNT(*) AS n FROM jobs WHERE kind = 'ocr' AND status != 'done' GROUP BY status`).all<any>();
-  const onlineMs = settings.agentOnlineSeconds * 1000;
+  const onlineMs = onlineWindowMs(settings);
   return c.json({
     mode: settings.ocrProvider,
     visionKeyConfigured: !!c.env.GOOGLE_VISION_API_KEY,

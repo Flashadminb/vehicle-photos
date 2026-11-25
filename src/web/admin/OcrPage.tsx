@@ -203,6 +203,19 @@ export function OcrPage() {
             </tbody>
           </table>
         </div>
+        {canManage && settings && (
+          <div className="form-grid">
+            <label className="field">
+              <span>คอมที่ว่างถามหางานทุก (วินาที)</span>
+              <input className="input" type="number" min={10} max={600} defaultValue={settings.agentPollSeconds} onBlur={(e) => Number(e.target.value) !== settings.agentPollSeconds && void save({ agentPollSeconds: Number(e.target.value) })} />
+            </label>
+            <p className="small muted span-all">
+              โควต้า: เครื่องละประมาณ {Math.round(86400 / settings.agentPollSeconds).toLocaleString()} ครั้ง/วัน ถ้าเปิด 24 ชม. (จาก 100,000 ครั้ง/วันของ Workers ฟรี)
+              {st.agents.length > 0 && ` · ${st.agents.filter((a: any) => !a.disabled).length} เครื่อง ≈ ${Math.round(((86400 / settings.agentPollSeconds) * st.agents.filter((a: any) => !a.disabled).length) / 1000)}% ของโควต้า`}
+              {' '}— ถ้ามีมากกว่า 5 เครื่อง แนะนำตั้ง 60 วินาที (ป้ายจะถูกอ่านช้าลงไม่เกิน 1 นาที)
+            </p>
+          </div>
+        )}
         {canManage && (
           <form
             className="inline-form"
