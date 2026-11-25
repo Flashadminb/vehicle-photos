@@ -15,6 +15,8 @@ export interface CaptureViewProps {
   slots: Record<string, Slot>;
   online: boolean;
   publicId: string | null;
+  /** False when no photo has been accepted yet on this device (no round in progress). */
+  hasRound?: boolean;
   doneEnabled: boolean;
   doneBlocker: 'missing' | 'uploading' | null;
   finalize: { status: 'idle' | 'pending' | 'failed'; error?: string };
@@ -160,7 +162,17 @@ export function CaptureView(p: CaptureViewProps) {
           </section>
         )}
 
-        {review && (
+        {review && p.hasRound === false && (
+          <section className="card fa-review" aria-labelledby="fa-review-title">
+            <h1 id="fa-review-title">{t('no_round_title')}</h1>
+            <p className="muted">{t('no_round_hint')}</p>
+            <button type="button" className="btn btn-primary btn-lg btn-block fa-done" onClick={() => p.onSelectStep(0)}>
+              {t('start_capture')}
+            </button>
+          </section>
+        )}
+
+        {review && p.hasRound !== false && (
           <section className="card fa-review" aria-labelledby="fa-review-title">
             <h1 id="fa-review-title">{t('review_title')}</h1>
             <p className="muted small">{t('review_hint')}</p>

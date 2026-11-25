@@ -48,6 +48,9 @@ export const TRANSLATION_KEYS = [
   'online',
   'offline',
   'demo_emulated',
+  'no_round_title',
+  'no_round_hint',
+  'start_capture',
 ] as const;
 
 export type TranslationKey = (typeof TRANSLATION_KEYS)[number];
@@ -97,6 +100,9 @@ export const BUILTIN_TRANSLATIONS: Record<string, Record<TranslationKey, string>
     online: 'Online',
     offline: 'Offline',
     demo_emulated: 'is emulated',
+    no_round_title: 'No set in progress',
+    no_round_hint: 'Saved sets are kept in the dashboard. Photos taken on another phone or browser are not shown here.',
+    start_capture: 'Start with step 1',
   },
   th: {
     app_name: 'ถ่ายรูปรถ',
@@ -142,6 +148,9 @@ export const BUILTIN_TRANSLATIONS: Record<string, Record<TranslationKey, string>
     online: 'ออนไลน์',
     offline: 'ออฟไลน์',
     demo_emulated: 'ถูกจำลอง',
+    no_round_title: 'ยังไม่มีชุดที่กำลังถ่ายในเครื่องนี้',
+    no_round_hint: 'ชุดที่กดเสร็จสิ้นแล้วถูกบันทึกไว้ในหลังบ้าน รูปที่ถ่ายบนมือถือหรือเบราว์เซอร์อื่นจะไม่แสดงในเครื่องนี้',
+    start_capture: 'เริ่มถ่ายขั้นตอนที่ 1',
   },
 };
 

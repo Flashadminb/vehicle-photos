@@ -249,6 +249,7 @@ function Capture({ boot, reload, onSignedOut }: { boot: Boot; reload: () => Prom
         slots={s.slots}
         online={online}
         publicId={s.publicId}
+        hasRound={!!s.clientRoundId}
         doneEnabled={engine.canFinish(s)}
         doneBlocker={engine.doneBlocker(s)}
         finalize={s.finalize}
