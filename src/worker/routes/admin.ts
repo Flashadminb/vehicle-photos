@@ -385,8 +385,11 @@ admin.delete('/workflows/:id', requirePermission('config.edit'), async (c) => {
 /** People who take photos, for the history "ผู้ถ่าย" filter. */
 admin.get('/operators', requirePermission('sets.view'), async (c) => {
   const { results } = await c.env.DB.prepare(
-    `SELECT id, display_name, username, COALESCE(workflow_id, 'default') AS workflow_id FROM users
-     WHERE role IN ('operator', 'admin', 'super_admin') ORDER BY disabled, display_name LIMIT 1000`,
+    `SELECT id, display_name || CASE WHEN deleted_at IS NOT NULL THEN ' (ลบแล้ว)' ELSE '' END AS display_name,
+       CASE WHEN deleted_at IS NOT NULL THEN '-' ELSE username END AS username, COALESCE(workflow_id, 'default') AS workflow_id FROM users
+     WHERE role IN ('operator', 'admin', 'super_admin')
+       AND (deleted_at IS NULL OR EXISTS (SELECT 1 FROM rounds r WHERE r.operator_id = users.id))
+     ORDER BY deleted_at IS NOT NULL, disabled, display_name LIMIT 1000`,
   ).all();
   return c.json({ operators: results });
 });
@@ -490,7 +493,7 @@ admin.get('/users', requirePermission('users.manage'), async (c) => {
        (SELECT MAX(last_seen_at) FROM sessions s WHERE s.user_id = u.id) AS last_seen_at,
        (SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id AND s.revoked_at IS NULL AND s.expires_at > ?1) AS active_sessions,
        (SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id AND s.revoked_at IS NULL AND s.expires_at > ?1 AND s.last_seen_at > ?2) AS online_sessions
-     FROM users u ORDER BY u.disabled, u.role, u.display_name LIMIT 1000`,
+     FROM users u WHERE u.deleted_at IS NULL ORDER BY u.disabled, u.role, u.display_name LIMIT 1000`,
   )
     .bind(Date.now(), Date.now() - ONLINE_WINDOW_MS)
     .all();
@@ -523,6 +526,41 @@ admin.post('/users', requirePermission('users.manage'), async (c) => {
   }
   await audit(c.env, actor, 'user.created', { type: 'user', id }, { username, role: body.role }, clientIp(c));
   return c.json({ id, temporaryPassword: generated });
+});
+
+/**
+ * Delete a member permanently. Members who never took a set are removed completely. Members
+ * with photo sets keep only their display name (so the history still says who took each set):
+ * their login, password, PIN, sessions and username are destroyed and the username can be reused.
+ */
+admin.delete('/users/:id', requirePermission('users.manage'), async (c) => {
+  const actor = c.get('user');
+  const id = c.req.param('id');
+  const { confirm } = await readJson<{ confirm?: string }>(c).catch(() => ({ confirm: '' }));
+  const target = await c.env.DB.prepare(`SELECT * FROM users WHERE id = ? AND deleted_at IS NULL`).bind(id).first<any>();
+  if (!target) throw notFound('User not found.');
+  assertCanManage(actor, target.role);
+  if (id === actor.id) throw badRequest('ลบบัญชีตัวเองไม่ได้');
+  if (String(confirm ?? '').trim().toLowerCase() !== String(target.username).toLowerCase()) throw badRequest(`พิมพ์ชื่อผู้ใช้ "${target.username}" เพื่อยืนยัน`);
+  if (target.role === 'super_admin') {
+    const n = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM users WHERE role = 'super_admin' AND disabled = 0 AND deleted_at IS NULL`).first<{ n: number }>();
+    if ((n?.n ?? 0) <= 1 && !target.disabled) throw badRequest('ต้องมีผู้ดูแลสูงสุดที่ใช้งานอยู่อย่างน้อย 1 คน');
+  }
+  const now = Date.now();
+  const hasSets = !!(await c.env.DB.prepare(`SELECT 1 FROM rounds WHERE operator_id = ? LIMIT 1`).bind(id).first());
+  if (hasSets) {
+    await c.env.DB.batch([
+      c.env.DB.prepare(`DELETE FROM sessions WHERE user_id = ?`).bind(id),
+      c.env.DB.prepare(
+        `UPDATE users SET username = ?, password_hash = '!', pin_hash = NULL, disabled = 1, must_change_password = 0,
+           workflow_id = NULL, deleted_at = ?, updated_at = ? WHERE id = ?`,
+      ).bind(`deleted-${id.slice(0, 8)}-${now}`, now, now, id),
+    ]);
+  } else {
+    await c.env.DB.batch([c.env.DB.prepare(`DELETE FROM sessions WHERE user_id = ?`).bind(id), c.env.DB.prepare(`DELETE FROM users WHERE id = ?`).bind(id)]);
+  }
+  await audit(c.env, actor, 'user.deleted', { type: 'user', id }, { username: target.username, displayName: target.display_name, keptNameForHistory: hasSets }, clientIp(c), now);
+  return c.json({ ok: true, keptNameForHistory: hasSets });
 });
 
 admin.patch('/users/:id', requirePermission('users.manage'), async (c) => {

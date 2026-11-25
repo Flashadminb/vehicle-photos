@@ -6,7 +6,8 @@ import { useMe } from './context';
 
 const GB = 1024 ** 3;
 const MB = 1024 ** 2;
-const fmtBytes = (n: number | null | undefined) => (n == null ? '—' : n >= GB ? `${(n / GB).toFixed(2)} GB` : `${(n / MB).toFixed(1)} MB`);
+const fmtBytes = (n: number | null | undefined) =>
+  n == null ? '—' : n >= GB ? `${(n / GB).toFixed(2)} GB` : n >= MB ? `${(n / MB).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
 
 function Meter({ used, quota, threshold, label }: { used: number | null; quota: number; threshold: number; label: string }) {
   const pct = used == null ? 0 : Math.min(100, (used / quota) * 100);
@@ -325,7 +326,10 @@ export function DriveStorage() {
         <Meter label="แคชรูป R2" used={storage.cache.bytes} quota={storage.cache.quotaBytes} threshold={storage.cache.thresholdPct} />
         <p className="small muted">แคชอยู่ {storage.cache.objects.toLocaleString()} ไฟล์ · หลังล้างจะเหลือ {storage.cache.targetPct}%</p>
         <Meter label="ฐานข้อมูล D1 (metadata)" used={storage.db.bytes} quota={storage.db.quotaBytes} threshold={storage.db.thresholdPct} />
-        <p className="small muted">มีชุดรูปในระบบ {storage.db.rounds.toLocaleString()} ชุด</p>
+        <p className="small muted">
+          มีชุดรูปในระบบ {storage.db.rounds.toLocaleString()} ชุด · D1 เก็บเฉพาะข้อมูลตัวอักษร (เวลา ทะเบียน ผู้ถ่าย ID ไฟล์ Drive ประวัติการใช้งาน) ประมาณ 3–5 KB ต่อชุด
+          ไม่เก็บรูป จึงใช้พื้นที่น้อยมาก (500 MB ≈ 100,000 ชุดขึ้นไป)
+        </p>
         {storage.db.bytes != null && storage.db.bytes / storage.db.quotaBytes * 100 >= storage.db.thresholdPct && (
           <p className="banner banner-warn small">ฐานข้อมูลใช้พื้นที่เกินเกณฑ์แล้ว ดูทางเลือกใน docs/ARCHITECTURE.md หัวข้อ “Metadata archiving” ข้อมูลที่ย้ายออกไปจะค้นหาในแอปไม่ได้ถ้าไม่มีระบบเพิ่ม</p>
         )}

@@ -86,3 +86,32 @@ describe('presence', () => {
     expect(row.online_sessions).toBe(1);
   });
 });
+
+describe('permanent member delete', () => {
+  it('removes a member without sets completely; keeps only the name of one with sets; frees the username', async () => {
+    const h = await import('./helpers');
+    const { client: admin } = await h.loggedIn('admin', 'super_admin');
+    const fresh = await h.createUser('operator');
+    expect((await admin.json('DELETE', `/api/admin/users/${fresh.user.id}`, { confirm: 'wrong' })).status).toBe(400);
+    expect((await admin.json('DELETE', `/api/admin/users/${fresh.user.id}`, { confirm: fresh.user.username })).status).toBe(200);
+    expect(await h.testEnv.DB.prepare(`SELECT 1 FROM users WHERE id = ?`).bind(fresh.user.id).first()).toBeNull();
+
+    // A member with a set: login destroyed, name kept for the history, username reusable.
+    const op = await h.loggedIn('field', 'operator');
+    const wf = (await op.client.json('GET', '/api/field/bootstrap')).body.workflow;
+    await op.client.json('POST', '/api/field/images/begin', { clientRoundId: h.rid(), clientImageId: h.rid(), workflowVersionId: wf.id, stepId: wf.steps[0].id, source: 'camera', acceptedAtDevice: Date.now() });
+    const r = await admin.json('DELETE', `/api/admin/users/${op.user.id}`, { confirm: op.user.username });
+    expect(r.body.keptNameForHistory).toBe(true);
+    const row = await h.testEnv.DB.prepare(`SELECT username, disabled, deleted_at FROM users WHERE id = ?`).bind(op.user.id).first<any>();
+    expect(row.deleted_at).toBeTruthy();
+    expect(row.username).not.toBe(op.user.username);
+    expect((await op.client.json('GET', '/api/field/bootstrap')).status).toBe(401); // sessions gone
+    const list = await admin.json('GET', '/api/admin/users');
+    expect(list.body.users.some((u: any) => u.id === op.user.id)).toBe(false);
+    // An admin cannot delete a super admin, and nobody can delete themselves.
+    const { client: plainAdmin, user: plain } = await h.loggedIn('admin', 'admin');
+    const me = (await admin.json('GET', '/api/admin/me')).body.user;
+    expect((await plainAdmin.json('DELETE', `/api/admin/users/${me.id}`, { confirm: me.username })).status).toBe(403);
+    expect((await plainAdmin.json('DELETE', `/api/admin/users/${plain.id}`, { confirm: plain.username })).status).not.toBe(200);
+  });
+});

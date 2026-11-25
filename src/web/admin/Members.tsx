@@ -207,6 +207,25 @@ export function Members() {
                           >
                             {u.disabled ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}
                           </button>
+                          <button
+                            className="btn btn-sm btn-danger"
+                            title="ลบบัญชีถาวร (ย้อนกลับไม่ได้)"
+                            onClick={() => {
+                              const typed = prompt(
+                                `ลบ “${u.display_name}” ถาวร — ย้อนกลับไม่ได้\n\n` +
+                                  `• บัญชี รหัสผ่าน PIN และการเข้าระบบทุกเครื่องถูกลบ ชื่อผู้ใช้นำไปใช้ใหม่ได้\n` +
+                                  `• ชุดรูปที่คนนี้เคยถ่ายยังอยู่ในประวัติ (แสดงชื่อเดิม) รูปใน Drive ไม่ถูกแตะ\n\n` +
+                                  `พิมพ์ชื่อผู้ใช้ “${u.username}” เพื่อยืนยัน`,
+                              );
+                              if (typed == null) return;
+                              void run(
+                                () => api('DELETE', `/api/admin/users/${u.id}`, { confirm: typed }),
+                                () => `ลบ ${u.display_name} ถาวรแล้ว`,
+                              );
+                            }}
+                          >
+                            ลบถาวร
+                          </button>
                         </div>
                       )}
                     </td>
