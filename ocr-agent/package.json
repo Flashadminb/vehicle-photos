@@ -1,6 +1,6 @@
 {
   "name": "vehicle-photos-ocr-agent",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "private": true,
   "description": "Local OCR computer for Vehicle Photos: pulls plate photos, reads Thai plates with OpenCV + Tesseract, reports results.",
   "type": "module",

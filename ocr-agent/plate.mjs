@@ -518,24 +518,36 @@ export async function readPlate(buffer, { debugDir } = {}) {
 
 /** "บร7865(เพชรบุรี)" → { plate: 'บร 7865', province } — the pattern printed on dispatch slips. */
 export function parseSlip(text) {
-  const t = (text || '').normalize('NFC').replace(/\s+/g, ' ');
-  const re = /(?:^|[^0-9ก-ฮ])([0-9]?[ก-ฮ]{1,3})\s*-?\s*(\d{1,4})\s*[(（]\s*([\u0E00-\u0E7F\s]{3,30}?)\s*[)）]/g;
-  for (const m of t.matchAll(re)) {
-    const province = matchProvince(m[3]);
-    return { plate: `${m[1].replace(/\s/g, '')} ${m[2]}`, province, provinceText: m[3].replace(/\s/g, '') };
-  }
-  const n = /(?:^|\D)(\d{2})\s*-\s*(\d{4})\s*[(（]\s*([\u0E00-\u0E7F\s]{3,30}?)\s*[)）]/.exec(t);
-  if (n) return { plate: `${n[1]}-${n[2]}`, province: matchProvince(n[3]), provinceText: n[3].replace(/\s/g, '') };
-  // Any other registration printed before a province, e.g. "725067723224(พระนครศรีอยุธยา)".
-  // Accepted only when the bracket holds a real province.
-  // The token right before the bracket; groups of digits split by OCR spaces are joined.
-  const g = /((?:\d+ )*[0-9A-Za-zก-ฮ-]*\d[0-9A-Za-zก-ฮ-]*)\s*[(（]\s*([\u0E00-\u0E7F\s]{3,30}?)\s*[)）]/g;
-  for (const m of t.matchAll(g)) {
-    const province = matchProvince(m[2]);
-    const id = m[1].replace(/\s+/g, '').replace(/^-+|-+$/g, '');
-    if (province && id.length >= 3 && id.length <= 20 && (id.match(/\d/g)?.length ?? 0) >= 3) return { plate: id, province, provinceText: m[2].replace(/\s/g, '') };
+  // Same rules as the server (src/shared/plate.ts extractSlipPlate): everything printed before
+  // "(province)" that belongs to the registration, e.g. "บร7865(เพชรบุรี)", "กท12-345(…)",
+  // "725067723224(พระนครศรีอยุธยา)". The server keeps the whole ID + province.
+  const t = (text || '').normalize('NFC').replace(/[–—]/g, '-').replace(/\s+/g, ' ');
+  for (const m of t.matchAll(/[(（]\s*([\u0E00-\u0E7F ]{2,30}?)\s*[)）]/g)) {
+    const id = slipIdBefore(t.slice(0, m.index));
+    if (!id) continue;
+    const province = matchProvince(m[1]);
+    const classic = /^[0-9]?[ก-ฮ]{1,3} ?-?\d{1,4}$/.test(id) || /^\d{2}-\d{4}$/.test(id);
+    const cleaned = m[1].replace(/\s/g, '');
+    if (province || (classic && cleaned.length >= 3)) return { plate: id.replace(/([ก-ฮ])(?=\d)/g, '$1 '), province, provinceText: cleaned };
   }
   return null;
+}
+
+function slipIdBefore(before) {
+  const tokens = before.trimEnd().split(' ');
+  const picked = [];
+  for (let i = tokens.length - 1; i >= 0 && picked.length < 5; i--) {
+    const tok = tokens[i];
+    if (!/^[0-9A-Za-zก-ฮ./-]+$/.test(tok)) break;
+    if (!/\d/.test(tok) && !/^[ก-ฮ]{1,3}$/.test(tok)) break;
+    if (picked.length && /^[ก-ฮ]+\d/.test(picked[0]) && /^\d+$/.test(tok)) break;
+    picked.unshift(tok);
+  }
+  const id = picked.join('').replace(/^[-./]+|[-./]+$/g, '');
+  if (id.length < 2 || id.length > 24) return null;
+  const digits = id.match(/\d/g)?.length ?? 0;
+  if (digits < 1 || (digits < 3 && !/[ก-ฮ]/.test(id))) return null;
+  return id;
 }
 
 /**

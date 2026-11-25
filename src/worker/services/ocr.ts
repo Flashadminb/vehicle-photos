@@ -1,6 +1,6 @@
 import type { Env } from '../env';
 import type { AppSettings } from '../../shared/types';
-import { extractSlipPlate, extractThaiPlate, normalizePlate, plateDigits } from '../../shared/plate';
+import { extractSlipPlate, extractThaiPlate, normalizePlate, plateCore, plateDigits } from '../../shared/plate';
 import { b64, fromB64 } from '../util';
 import type { DriveClient } from '../drive/types';
 import { syncRoundFolderName } from '../drive/folders';
@@ -43,7 +43,8 @@ export function resultFromText(raw: string, confidence: number | null, kind: Ocr
   if (kind === 'document') {
     // Only the "บร7865(เพชรบุรี)" pattern counts on a slip; other text (dates, IDs) is ignored.
     const slip = extractSlipPlate(stripWatermarkLines(raw));
-    return { raw: raw.slice(0, 2000), plate: slip?.plate ?? null, confidence: slip ? (confidence ?? 0.85) : confidence };
+    // Keep everything that was printed, province included: "725067723224 (พระนครศรีอยุธยา)".
+    return { raw: raw.slice(0, 2000), plate: slip ? `${slip.plate} (${slip.province})` : null, confidence: slip ? (confidence ?? 0.85) : confidence };
   }
   return { raw: raw.slice(0, 2000), plate: extractThaiPlate(stripWatermarkLines(raw)), confidence };
 }
@@ -236,7 +237,7 @@ export async function applyOcrResult(
   const plate = result.plate && !tooUnsure ? result.plate.normalize('NFC').replace(/\s+/g, ' ').trim().slice(0, 30) : null;
   let score = ocrScore(result.confidence, kind);
   // Two readings (slip + plate photo) that agree reinforce each other.
-  if (plate && round.plate_source === 'ocr' && round.plate_norm === normalizePlate(plate)) score = Math.max(score, round.plate_ocr_score ?? 0) + 0.05;
+  if (plate && round.plate_source === 'ocr' && plateCore(round.plate_text) === plateCore(plate)) score = Math.max(score, round.plate_ocr_score ?? 0) + 0.05;
   // Replace the plate only if: not corrected by hand, this reading found a plate, and it is
   // at least as trustworthy as the current automatic one. A failed reading never erases a good one.
   const replace = !!plate && round.plate_source !== 'manual' && (round.plate_source !== 'ocr' || score >= (round.plate_ocr_score ?? 0));

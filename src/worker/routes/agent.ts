@@ -120,7 +120,8 @@ agent.post('/jobs/:id/result', async (c) => {
   // that turned noise such as "ร 4" (8 %) into a plate. Slips keep the strict slip pattern.
   const agentPlate = body.plate ? resultFromText(String(body.plate), null).plate : null;
   const agentRejected = body.plate === null && kind === 'plate';
-  const result = { ...parsed, plate: agentPlate ?? (agentRejected ? null : parsed.plate) };
+  // Slips: the server's own parse keeps the whole printed ID + province; the agent's is a fallback.
+  const result = { ...parsed, plate: kind === 'document' ? (parsed.plate ?? agentPlate) : (agentPlate ?? (agentRejected ? null : parsed.plate)) };
   await applyOcrResult(c.env, getDrive(c.env, new URL(c.req.url).origin), job.ref_id, result, `ocr:local:${a.name}${kind === 'document' ? ':slip' : ''}`.slice(0, 60), now, kind);
   await c.env.DB.batch([
     c.env.DB.prepare(`UPDATE jobs SET status = 'done', updated_at = ? WHERE id = ?`).bind(now, job.id),

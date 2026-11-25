@@ -19,7 +19,8 @@ export function normalizePlate(text: string | null | undefined): string {
 
 /** The trailing digit group (the serial), used for digit-only searches like "1234". */
 export function plateDigits(text: string | null | undefined): string {
-  const norm = normalizePlate(text);
+  // The province in "บร 7865 (เพชรบุรี)" is not part of the serial.
+  const norm = normalizePlate((text ?? '').replace(/\s*[(（].*$/, ''));
   const m = /(\d+)$/.exec(norm);
   return m ? m[1] : '';
 }
@@ -61,25 +62,52 @@ export function extractThaiPlate(raw: string | null | undefined): string | null 
  */
 export function extractSlipPlate(raw: string | null | undefined): { plate: string; province: string } | null {
   if (!raw) return null;
-  const text = raw.normalize('NFC').replace(/\s+/g, ' ');
-  const re = /(?:^|[^0-9ก-ฮ])([0-9]?[ก-ฮ]{1,3})\s*-?\s*(\d{1,4})\s*[(（]\s*([\u0E00-\u0E7F\s]{3,30}?)\s*[)）]/g;
-  for (const m of text.matchAll(re)) {
-    const province = m[3].replace(/\s/g, '');
-    if (province.length >= 3) return { plate: `${m[1].replace(/\s/g, '')} ${m[2]}`, province };
-  }
-  // Truck format on a slip: "70-1234(ชลบุรี)".
-  const t = /(?:^|\D)(\d{2})\s*-\s*(\d{4})\s*[(（]\s*([\u0E00-\u0E7F\s]{3,30}?)\s*[)）]/.exec(text);
-  if (t) return { plate: `${t[1]}-${t[2]}`, province: t[3].replace(/\s/g, '') };
-  // Any other registration printed before a province, e.g. "725067723224(พระนครศรีอยุธยา)".
-  // Only accepted when the bracket really holds one of the 77 provinces (so "(ตัวอย่าง)" is ignored).
-  // The token right before the bracket; groups of digits split by OCR spaces are joined.
-  const g = /((?:\d+ )*[0-9A-Za-zก-ฮ-]*\d[0-9A-Za-zก-ฮ-]*)\s*[(（]\s*([\u0E00-\u0E7F\s]{3,30}?)\s*[)）]/g;
-  for (const m of text.matchAll(g)) {
-    const province = matchProvince(m[2]);
-    const id = m[1].replace(/\s+/g, '').replace(/^-+|-+$/g, '');
-    if (province && id.length >= 3 && id.length <= 20 && (id.match(/\d/g)?.length ?? 0) >= 3) return { plate: id, province };
+  const text = raw.normalize('NFC').replace(/[–—]/g, '-').replace(/\s+/g, ' ');
+  for (const m of text.matchAll(/[(（]\s*([\u0E00-\u0E7F ]{2,30}?)\s*[)）]/g)) {
+    const id = slipIdBefore(text.slice(0, m.index));
+    if (!id) continue;
+    const province = matchProvince(m[1]);
+    // A real province is required, except for a classic "letters + digits" plate.
+    const classic = /^[0-9]?[ก-ฮ]{1,3} ?-?\d{1,4}$/.test(id) || /^\d{2}-\d{4}$/.test(id);
+    const cleaned = m[1].replace(/\s/g, '');
+    if (province || (classic && cleaned.length >= 3)) return { plate: prettySlipId(id), province: province ?? cleaned };
   }
   return null;
+}
+
+/**
+ * Everything printed right before the bracket that belongs to the registration: up to 5
+ * space-separated pieces (OCR often splits "7250 6772 3224" or "1 กข 1234"), each made of
+ * digits / Thai consonants / Latin letters / "-" "." "/", stopping at ordinary words.
+ */
+function slipIdBefore(before: string): string | null {
+  const tokens = before.trimEnd().split(' ');
+  const picked: string[] = [];
+  for (let i = tokens.length - 1; i >= 0 && picked.length < 5; i--) {
+    const t = tokens[i];
+    if (!/^[0-9A-Za-zก-ฮ./-]+$/.test(t)) break;
+    const hasDigit = /\d/.test(t);
+    const shortThai = /^[ก-ฮ]{1,3}$/.test(t);
+    if (!hasDigit && !shortThai) break; // a word such as "Dispatching" or "ทะเบียน" ends the ID
+    // "บร7865" is already a whole plate: a separate number before it is noise (e.g. "5 บร7865").
+    if (picked.length && /^[ก-ฮ]+\d/.test(picked[0]) && /^\d+$/.test(t)) break;
+    picked.unshift(t);
+  }
+  const id = picked.join('').replace(/^[-./]+|[-./]+$/g, '');
+  if (id.length < 2 || id.length > 24) return null;
+  const digits = id.match(/\d/g)?.length ?? 0;
+  if (digits < 1 || (digits < 3 && !/[ก-ฮ]/.test(id))) return null;
+  return id;
+}
+
+/** "บร7865" → "บร 7865", "1กข1234" → "1กข 1234"; long numbers and other IDs stay as printed. */
+function prettySlipId(id: string) {
+  return id.replace(/([ก-ฮ])(?=\d)/g, '$1 ');
+}
+
+/** The registration without a trailing "(province)" / province, for comparing readings. */
+export function plateCore(text: string | null | undefined): string {
+  return normalizePlate((text ?? '').replace(/\s*[(（].*$/, ''));
 }
 
 function levenshtein(a: string, b: string) {

@@ -13,6 +13,24 @@ describe('extractSlipPlate', () => {
     expect(extractSlipPlate('5 บร7865(เพชรบุรี)')).toEqual({ plate: 'บร 7865', province: 'เพชรบุรี' });
     expect(extractSlipPlate('2026-11-25 SAM1VFBZ63 21BPLL')).toBeNull();
   });
+
+  it('keeps every printed form: digits inside letters, dashes, split groups, Latin', () => {
+    const p = (s: string) => extractSlipPlate(s)?.plate ?? null;
+    expect(p('กท12-345(กรุงเทพมหานคร)')).toBe('กท 12-345');
+    expect(p('1 กข 1234 (กรุงเทพมหานคร)')).toBe('1กข 1234');
+    expect(p('12ก345(ชลบุรี)')).toBe('12ก 345');
+    expect(p('ABC-1234(ระยอง)')).toBe('ABC-1234');
+    expect(p('7250 6772 3224 (พระนครศรีอยุธยา)')).toBe('725067723224');
+    expect(p('70–1234（ชลบุรี）')).toBe('70-1234'); // en dash, full-width brackets
+    expect(p('ทะเบียน บร7865(เพชรบุรี)')).toBe('บร 7865'); // the word before is not part of it
+  });
+
+  it('search digits ignore the province', async () => {
+    const { plateDigits, plateCore } = await import('../../src/shared/plate');
+    expect(plateDigits('บร 7865 (เพชรบุรี)')).toBe('7865');
+    expect(plateDigits('725067723224 (พระนครศรีอยุธยา)')).toBe('725067723224');
+    expect(plateCore('บร 7865 (เพชรบุรี)')).toBe(plateCore('บร7865'));
+  });
 });
 
 describe('slip + plate photo', () => {
@@ -64,26 +82,26 @@ describe('slip + plate photo', () => {
 
   it('a confident slip reading sets the plate and the plate photo is not sent to Vision', async () => {
     answers = {
-      document: { raw: 'Proof of Van Dispatching\nบร7865(เพชรบุรี)\n2026-11-25', plate: 'บร 7865', confidence: 0.9 },
+      document: { raw: 'Proof of Van Dispatching\nบร7865(เพชรบุรี)\n2026-11-25', plate: 'บร 7865 (เพชรบุรี)', confidence: 0.9 },
       plate: { raw: 'x', plate: 'บร 7866', confidence: 0.95 },
     };
     const { client } = await loggedIn('field', 'operator');
     const r = await captureRound(client);
     expect(visionCalls).toEqual(['document']); // plate photo skipped: saves a Vision call
     const row = await round(r);
-    expect(row.plate_text).toBe('บร 7865');
+    expect(row.plate_text).toBe('บร 7865 (เพชรบุรี)');
     expect(row.drive_folder_name).toContain('บร7865');
   });
 
   it('a failed plate-photo reading never erases the slip result; a weaker one does not replace it', async () => {
     answers = {
-      document: { raw: 'บร7865(เพชรบุรี)', plate: 'บร 7865', confidence: 0.5 }, // score 0.65: plate photo still read
+      document: { raw: 'บร7865(เพชรบุรี)', plate: 'บร 7865 (เพชรบุรี)', confidence: 0.5 }, // score 0.65: plate photo still read
       plate: { raw: 'noise', plate: null, confidence: 0.2 },
     };
     const { client } = await loggedIn('field', 'operator');
     const r = await captureRound(client);
     expect(visionCalls).toEqual(['document', 'plate']);
-    expect((await round(r)).plate_text).toBe('บร 7865');
+    expect((await round(r)).plate_text).toBe('บร 7865 (เพชรบุรี)');
   });
 
   it('a better plate-photo reading can replace a weak slip reading', async () => {
