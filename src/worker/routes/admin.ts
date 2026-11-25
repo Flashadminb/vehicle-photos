@@ -821,13 +821,20 @@ admin.post('/ocr/send-to-local', requirePermission('sets.editPlate'), async (c) 
 
 /** Read one set's plate again (target 'auto' follows the OCR mode; 'local' forces Local OCR). */
 admin.post('/sets/:id/ocr', requirePermission('sets.editPlate'), async (c) => {
-  const { target } = await readJson<{ target?: 'auto' | 'local' }>(c).catch(() => ({ target: 'auto' as const }));
+  const { target, bulk } = await readJson<{ target?: 'auto' | 'local'; bulk?: boolean }>(c).catch(() => ({ target: 'auto' as const, bulk: false }));
   const id = c.req.param('id');
   const round = await loadVisibleSet(c.env, c.get('user'), id);
   const settings = await getSettings(c.env);
   if (settings.ocrProvider === 'none' && target !== 'local') throw badRequest('เปิดใช้การอ่านป้ายทะเบียนก่อน (หน้า อ่านป้ายทะเบียน)');
-  const wf = await getWorkflow(c.env, round.workflow_version_id);
-  const ocrSteps = (wf?.steps ?? []).filter((s) => s.ocr).map((s) => s.id);
+  let wf = await getWorkflow(c.env, round.workflow_version_id);
+  let ocrSteps = (wf?.steps ?? []).filter((s) => s.ocr).map((s) => s.id);
+  if (!ocrSteps.length) {
+    // Sets taken before OCR was switched on: use today's settings of the same profile for the same steps.
+    const cur = await getCurrentWorkflow(c.env, round.workflow_id ?? 'default');
+    const own = new Set((wf?.steps ?? []).map((s) => s.id));
+    ocrSteps = cur.steps.filter((s) => s.ocr && own.has(s.id)).map((s) => s.id);
+    wf = cur;
+  }
   if (!ocrSteps.length) throw badRequest('ขั้นตอนของชุดนี้ไม่มีขั้นตอนที่ตั้งให้อ่านป้าย');
   const { results: imgs } = await c.env.DB.prepare(
     `SELECT id, step_id FROM images WHERE round_id = ? AND active = 1 AND uploaded_at IS NOT NULL AND step_id IN (${ocrSteps.map(() => '?').join(',')})`,
@@ -849,7 +856,8 @@ admin.post('/sets/:id/ocr', requirePermission('sets.editPlate'), async (c) => {
   ]);
   if (target !== 'local') {
     try {
-      c.executionCtx.waitUntil(processJobs(c.env, 3, new URL(c.req.url).origin).catch(() => undefined));
+      // Bulk re-reads come one set per request: read about that set's photos now (stays within per-request limits).
+      c.executionCtx.waitUntil(processJobs(c.env, bulk ? 2 : 3, new URL(c.req.url).origin).catch(() => undefined));
     } catch {
       /* tests */
     }

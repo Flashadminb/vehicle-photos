@@ -54,4 +54,23 @@ describe('capture profiles (รูปแบบการถ่าย)', () => {
     expect((await client.json('GET', '/api/admin/operators')).status).toBe(200);
     expect((await client.json('POST', '/api/admin/workflows', { name: 'x' })).status).toBe(403);
   });
+
+  it('re-reading an old set taken before OCR was on uses today\'s OCR settings for the same steps', async () => {
+    const { client: admin } = await loggedIn('admin', 'super_admin');
+    await admin.json('PUT', '/api/admin/settings', { ocrProvider: 'local' });
+    const before = (await admin.json('GET', '/api/admin/workflow?workflowId=default')).body.current;
+    const noOcr = before.steps.map((s: any) => ({ ...s, ocr: false }));
+    await admin.json('POST', '/api/admin/workflow', { workflowId: 'default', steps: noOcr });
+    const op = await loggedIn('field', 'operator');
+    const { roundId } = await captureWithBootstrap(op.client);
+    // Now switch OCR on for the first step (as a slip) and re-read the old set.
+    const withOcr = before.steps.map((s: any, i: number) => ({ ...s, ocr: i === 0, ocrKind: 'document' }));
+    await admin.json('POST', '/api/admin/workflow', { workflowId: 'default', steps: withOcr });
+    const r = await admin.json('POST', `/api/admin/sets/${roundId}/ocr`, { target: 'local', bulk: true });
+    expect(r.status).toBe(200);
+    const job = await testEnv.DB.prepare(`SELECT payload, status FROM jobs WHERE kind = 'ocr' AND ref_id = ? ORDER BY id DESC`).bind(roundId).first<any>();
+    expect(JSON.parse(job.payload).kind).toBe('document');
+    expect(job.status).toBe('local');
+    await admin.json('POST', '/api/admin/workflow', { workflowId: 'default', steps: before.steps });
+  });
 });

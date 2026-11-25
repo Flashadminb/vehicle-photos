@@ -40,6 +40,8 @@ export function History() {
   /** Sets about to be deleted (one row, the selection, or everything matching the filter). */
   const [deleting, setDeleting] = useState<string[] | null>(null);
   const [collecting, setCollecting] = useState(false);
+  /** Sets to read again (bulk OCR). */
+  const [rereading, setRereading] = useState<string[] | null>(null);
   const [viewing, setViewing] = useState<string | null>(null);
   const [details, setDetails] = useState<string | null>(null);
   const [exporting, setExporting] = useState<{ done: number; total: number; ctrl: AbortController } | null>(null);
@@ -134,6 +136,7 @@ export function History() {
 
   return (
     <div className="page">
+      {rereading && <BulkReread ids={rereading} onClose={() => setRereading(null)} onDone={() => void load('first')} />}
       {deleting && (
         <BulkDelete
           ids={deleting}
@@ -231,6 +234,26 @@ export function History() {
           {me.can('sets.export') && (
             <button className="btn btn-sm" disabled={selected.size === 0 || !!exporting || selected.size > me.settings.exportMaxSets} onClick={() => void runExport()} title={`ได้สูงสุด ${me.settings.exportMaxSets} ชุดต่อครั้ง`}>
               ⬇ ส่งออก Excel {selected.size ? `(${selected.size} ชุด)` : ''}
+            </button>
+          )}
+          {me.can('sets.editPlate') && (
+            <button
+              className="btn btn-sm"
+              disabled={total === 0 || collecting || !!timeError}
+              title="อ่านทะเบียนใหม่ของชุดที่ติ๊ก หรือถ้าไม่ได้ติ๊ก = ทุกชุดตามตัวกรอง (สูงสุด 500)"
+              onClick={async () => {
+                if (selected.size) return setRereading([...selected]);
+                setCollecting(true);
+                try {
+                  setRereading(await allIdsForFilter());
+                } catch (e) {
+                  alert((e as Error).message);
+                } finally {
+                  setCollecting(false);
+                }
+              }}
+            >
+              🔄 อ่านป้ายใหม่ {selected.size ? `(${selected.size} ชุด)` : `(ทั้งหมด ${Math.min(total, 500).toLocaleString()} ชุด)`}
             </button>
           )}
           {me.can('sets.remove') && (
@@ -822,6 +845,65 @@ function BulkDelete({ ids, canTrash, onClose, onDone }: { ids: string[]; canTras
           >
             {trashDrive ? `ลบ ${ids.length} ชุด + รูปใน Drive` : `ลบ ${ids.length} ชุดออกจากประวัติ`}
           </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/** Read the plates of many sets again, one request per set, with progress. */
+function BulkReread({ ids, onClose, onDone }: { ids: string[]; onClose: () => void; onDone: () => void }) {
+  const [target, setTarget] = useState<'local' | 'auto'>('local');
+  const [progress, setProgress] = useState<{ done: number; ok: number; skipped: number } | null>(null);
+  const stop = useRef(false);
+  const running = progress != null && progress.done < ids.length;
+  async function run() {
+    stop.current = false;
+    let ok = 0;
+    let skipped = 0;
+    for (let i = 0; i < ids.length && !stop.current; i++) {
+      try {
+        await api('POST', `/api/admin/sets/${ids[i]}/ocr`, { target, bulk: true });
+        ok++;
+      } catch {
+        skipped++; // no OCR step / no uploaded photo / not visible
+      }
+      setProgress({ done: i + 1, ok, skipped });
+    }
+    onDone();
+  }
+  return (
+    <Modal title={`อ่านป้ายใหม่ ${ids.length.toLocaleString()} ชุด`} onClose={() => { stop.current = true; onClose(); }}>
+      <div className="bulk-delete">
+        <p>ส่งรูปใบบาร์/ป้ายทะเบียนของชุดเหล่านี้ไปอ่านใหม่ด้วยตัวอ่านล่าสุด ทะเบียนที่<strong>แก้ด้วยมือแล้วจะไม่ถูกเปลี่ยน</strong> · ชุดที่ถ่ายก่อนเปิด OCR จะใช้การตั้งค่าขั้นตอนปัจจุบัน</p>
+        <label className="checkbox">
+          <input type="radio" name="target" checked={target === 'local'} onChange={() => setTarget('local')} disabled={progress != null} />
+          <span><strong>ใช้คอม Local OCR</strong> (ไม่ใช้โควต้า Google Vision · ต้องมีคอมเปิดอยู่)</span>
+        </label>
+        <label className="checkbox">
+          <input type="radio" name="target" checked={target === 'auto'} onChange={() => setTarget('auto')} disabled={progress != null} />
+          <span>ตามโหมดที่ตั้งไว้ (อาจใช้ Google Vision ~1–2 ครั้งต่อชุด ภายในเพดานรายเดือน)</span>
+        </label>
+        {progress && (
+          <div>
+            <progress max={ids.length} value={progress.done} style={{ width: '100%' }} />
+            <p className="small">
+              ส่งแล้ว {progress.done}/{ids.length} · สำเร็จ {progress.ok} · ข้าม {progress.skipped} (ไม่มีขั้นตอน OCR หรือยังไม่มีรูป)
+              {progress.done === ids.length && ' — ผลจะทยอยขึ้นในหน้าประวัติภายในไม่กี่นาที ดูความคืบหน้าที่หน้า “อ่านป้ายทะเบียน (OCR)”'}
+            </p>
+          </div>
+        )}
+        <div className="details-actions">
+          {running ? (
+            <button className="btn" onClick={() => (stop.current = true)}>หยุด</button>
+          ) : (
+            <button className="btn" onClick={onClose}>{progress ? 'ปิด' : 'ยกเลิก'}</button>
+          )}
+          {!progress && (
+            <button className="btn btn-primary" onClick={() => void run()}>
+              เริ่มอ่าน {ids.length.toLocaleString()} ชุด
+            </button>
+          )}
         </div>
       </div>
     </Modal>
