@@ -120,7 +120,7 @@ export const BUILTIN_TRANSLATIONS: Record<string, Record<TranslationKey, string>
     torch: 'Light',
     native_camera: 'Phone camera',
     in_app_camera: 'Use in-app camera (faster)',
-    doc_guide: 'Fill the frame with the plate line, e.g. บร7865(เพชรบุรี)',
+    doc_guide: 'Fit the whole slip inside the frame, landscape',
   },
   th: {
     app_name: 'ถ่ายรูปรถ',
@@ -177,7 +177,7 @@ export const BUILTIN_TRANSLATIONS: Record<string, Record<TranslationKey, string>
     torch: 'ไฟ',
     native_camera: 'กล้องมือถือ',
     in_app_camera: 'ใช้กล้องในแอป (เร็วกว่า)',
-    doc_guide: 'ให้บรรทัดทะเบียน เช่น บร7865(เพชรบุรี) ใหญ่เต็มกรอบ',
+    doc_guide: 'วางใบบาร์ทั้งใบให้เต็มกรอบ (แนวนอน)',
   },
 };
 
