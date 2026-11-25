@@ -7,7 +7,7 @@ import { createInterface } from 'node:readline';
 import { hostname } from 'node:os';
 import { readPlate, shutdown } from './plate.mjs';
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const cfgFile = new URL('./config.json', import.meta.url);
 const exampleFile = new URL('./config.example.json', import.meta.url);
 
@@ -37,7 +37,7 @@ async function firstRunSetup() {
       continue;
     }
     const { name } = await res.json();
-    const cfg = { server, token, minConfidence: example.minConfidence ?? 0.6 };
+    const cfg = { server, token, minConfidence: example.minConfidence ?? 0.7 };
     await writeFile(cfgFile, JSON.stringify(cfg, null, 2));
     console.log(`บันทึก config.json แล้ว — เครื่องนี้คือ "${name}"\n`);
     rl.close();
@@ -55,7 +55,7 @@ const cfg = existsSync(cfgFile)
 const SERVER = (process.env.VP_SERVER || cfg.server || '').replace(/\/$/, '');
 const TOKEN = process.env.VP_TOKEN || cfg.token || '';
 // Below this confidence the plate is not filled in (it stays "ไม่ระบุ" for an admin to check).
-const MIN_CONFIDENCE = Number(process.env.VP_MIN_CONFIDENCE || cfg.minConfidence || 0.6);
+const MIN_CONFIDENCE = Number(process.env.VP_MIN_CONFIDENCE || cfg.minConfidence || 0.7);
 
 if (!SERVER || !TOKEN) {
   console.error('ยังไม่ได้ตั้งค่า: คัดลอก config.example.json เป็น config.json แล้วใส่ server และ token จากแดชบอร์ด');

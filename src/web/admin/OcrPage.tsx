@@ -252,9 +252,9 @@ export function OcrPage() {
           <div className="sub-card">
             <strong>config.json สำหรับ {newToken.name}</strong>
             <p className="small muted">token นี้แสดงครั้งเดียว ให้คัดลอกทั้งหมดไปวางในไฟล์ <code>config.json</code> ในโฟลเดอร์โปรแกรมบนคอมเครื่องนั้น</p>
-            <pre className="raw">{JSON.stringify({ server: location.origin, token: newToken.token, minConfidence: 0.6 }, null, 2)}</pre>
+            <pre className="raw">{JSON.stringify({ server: location.origin, token: newToken.token, minConfidence: 0.7 }, null, 2)}</pre>
             <div className="row-actions">
-              <button className="btn btn-sm" onClick={() => void navigator.clipboard.writeText(JSON.stringify({ server: location.origin, token: newToken.token, minConfidence: 0.6 }, null, 2))}>คัดลอก</button>
+              <button className="btn btn-sm" onClick={() => void navigator.clipboard.writeText(JSON.stringify({ server: location.origin, token: newToken.token, minConfidence: 0.7 }, null, 2))}>คัดลอก</button>
               <button className="btn btn-sm" onClick={() => setNewToken(null)}>ปิด</button>
             </div>
           </div>

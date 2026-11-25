@@ -22,7 +22,7 @@ let scored = 0, correct = 0;
 for (const f of files) {
   const r = await readPlate(await readFile(f), { debugDir: files.length === 1 ? 'debug' : undefined });
   const expected = basename(f, extname(f)).split(/[_ ]/)[0];
-  const hasLabel = /[ก-ฮ]/.test(expected) && /\d/.test(expected);
+  const hasLabel = (/[ก-ฮ]/.test(expected) && /\d/.test(expected)) || /^\d{2}-?\d{4}$/.test(expected);
   let mark = '';
   if (hasLabel) {
     scored++;
