@@ -1,5 +1,5 @@
 import type { BeginImageRequest, BeginImageResponse, CompleteImageRequest, CompleteImageResponse, FinalizeResponse, ImageSource, WorkflowVersion } from '../../shared/types';
-import { SMALL_IMAGE_EDGE } from '../../shared/types';
+import { stepImageEdge } from '../../shared/types';
 
 /**
  * CaptureEngine — the field app's round state machine and durable upload queue.
@@ -522,7 +522,7 @@ export class CaptureEngine {
           publicId: begin.round.publicId,
           stepLabel: begin.stepLabel || this.deps.stepLabel(step),
           stepNumber: wf.steps.indexOf(step) + 1,
-        }, step.imageSize === 'small' ? { displayEdge: SMALL_IMAGE_EDGE } : undefined);
+        }, { displayEdge: stepImageEdge(step) });
         if (!stillActive()) return;
         // Display copy, original and cache copies upload in parallel, with progress shown.
         const uploads = begin.uploads;

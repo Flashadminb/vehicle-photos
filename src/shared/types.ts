@@ -22,14 +22,23 @@ export interface WorkflowStep {
    * document → 'slip', no OCR → none). 'slip_line' = a thin band for zooming on the plate line.
    */
   guide?: StepGuide;
-  /** 'small' = 960 px display copy (evidence photos that need no fine detail). Default 'normal'. */
+  /** 'small' = 960 px display copy (kept for older workflow versions; imageEdge replaces it). */
   imageSize?: 'normal' | 'small';
+  /** Long edge (px) of this step's saved photo. Absent = the global setting (default 1280). */
+  imageEdge?: number;
   /** Label per language code. */
   labels: Record<string, string>;
 }
 
 export type StepGuide = 'none' | 'plate' | 'slip' | 'slip_line';
 export const SMALL_IMAGE_EDGE = 960;
+export const STEP_IMAGE_EDGES = [640, 800, 960, 1280, 1600, 1920, 2048] as const;
+
+/** This step's photo size override, if any. */
+export function stepImageEdge(s: { imageEdge?: number; imageSize?: 'normal' | 'small' }): number | undefined {
+  if (s.imageEdge && (STEP_IMAGE_EDGES as readonly number[]).includes(s.imageEdge)) return s.imageEdge;
+  return s.imageSize === 'small' ? SMALL_IMAGE_EDGE : undefined;
+}
 
 /** The frame shown for a step (explicit choice, else derived from its OCR setting). */
 export function stepGuide(s: { ocr: boolean; ocrKind?: 'plate' | 'document'; guide?: StepGuide }): Exclude<StepGuide, 'none'> | null {

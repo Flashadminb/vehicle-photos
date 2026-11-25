@@ -1,4 +1,5 @@
 import type { Env } from '../env';
+import { STEP_IMAGE_EDGES } from '../../shared/types';
 import { OCR_PROVIDERS, DEFAULT_SETTINGS, type AppSettings, type Language, type WorkflowStep, type WorkflowVersion } from '../../shared/types';
 import { badRequest } from '../util';
 
@@ -106,6 +107,7 @@ export function validateSteps(steps: unknown, languages: string[]): WorkflowStep
     out.push({ id, required: Boolean(raw.required), allowUpload: Boolean(raw.allowUpload), ocr: Boolean(raw.ocr), ocrKind: raw.ocrKind === 'document' ? 'document' : 'plate',
       ...(['none', 'plate', 'slip', 'slip_line'].includes(raw.guide) ? { guide: raw.guide } : {}),
       ...(raw.imageSize === 'small' ? { imageSize: 'small' as const } : {}),
+      ...((STEP_IMAGE_EDGES as readonly number[]).includes(Number(raw.imageEdge)) ? { imageEdge: Number(raw.imageEdge) } : {}),
       labels });
   }
   if (!out.some((s) => s.required)) throw badRequest('At least one step must be required.');

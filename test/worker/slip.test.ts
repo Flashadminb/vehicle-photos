@@ -102,7 +102,7 @@ describe('step frame and photo size options', () => {
     const before = await getCurrentWorkflow(testEnv);
     const admin = await createUser('admin');
     const steps = before.steps.map((s, i) =>
-      i === 0 ? { ...s, guide: 'slip_line', imageSize: 'small' } : i === 1 ? { ...s, guide: 'bogus', imageSize: 'huge' } : s,
+      i === 0 ? { ...s, guide: 'slip_line', imageSize: 'small' } : i === 1 ? { ...s, guide: 'bogus', imageSize: 'huge', imageEdge: 1234 } : { ...s, imageEdge: 1600 },
     );
     await publishWorkflow(testEnv, validateSteps(steps, ['th', 'en']), 'frame test', admin.user.id, Date.now());
     const wf = await getCurrentWorkflow(testEnv);
@@ -110,6 +110,8 @@ describe('step frame and photo size options', () => {
     expect(wf.steps[0].imageSize).toBe('small');
     expect(wf.steps[1].guide).toBeUndefined();
     expect(wf.steps[1].imageSize).toBeUndefined();
+    expect(wf.steps[1].imageEdge).toBeUndefined();
+    expect(wf.steps[2].imageEdge).toBe(1600);
     await publishWorkflow(testEnv, before.steps, 'restore', admin.user.id, Date.now());
   });
 });

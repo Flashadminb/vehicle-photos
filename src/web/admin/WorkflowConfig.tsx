@@ -2,6 +2,10 @@ import { useEffect, useState } from 'react';
 import { api } from '../shared/api';
 import type { AppSettings, Language, WorkflowStep, WorkflowVersion } from '../../shared/types';
 import { FieldPreview } from './Preview';
+import { STEP_IMAGE_EDGES, stepImageEdge } from '../../shared/types';
+
+/** Rough JPEG size of a watermarked photo per long edge (q 0.82). */
+const EDGE_MB: Record<number, string> = { 640: '0.1', 800: '0.15', 960: '0.2', 1280: '0.35', 1600: '0.5', 1920: '0.7', 2048: '0.8' };
 import { formatBangkok } from '../../shared/time';
 
 export function WorkflowConfig() {
@@ -137,9 +141,17 @@ export function WorkflowConfig() {
                     </label>
                     <label className="field-inline small">
                       ขนาดรูป
-                      <select className="input input-sm" value={s.imageSize ?? 'normal'} onChange={(e) => update(i, { imageSize: e.target.value === 'small' ? 'small' : undefined })}>
-                        <option value="normal">ปกติ (1280 px)</option>
-                        <option value="small">เล็ก (960 px) ประหยัดพื้นที่</option>
+                      <select
+                        className="input input-sm"
+                        value={stepImageEdge(s) ?? ''}
+                        onChange={(e) => update(i, { imageEdge: e.target.value ? Number(e.target.value) : undefined, imageSize: undefined })}
+                      >
+                        <option value="">ตามค่ากลาง ({settings?.imageDisplayEdge ?? 1280} px)</option>
+                        {STEP_IMAGE_EDGES.map((px) => (
+                          <option key={px} value={px}>
+                            {px} px · ~{EDGE_MB[px]} MB{px <= 960 ? ' (ประหยัด)' : px >= 1600 ? ' (คมชัด)' : ''}
+                          </option>
+                        ))}
                       </select>
                     </label>
                   </div>

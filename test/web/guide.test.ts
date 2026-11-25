@@ -11,3 +11,13 @@ describe('step aiming frame', () => {
     expect(stepGuide({ ocr: false, guide: 'slip' })).toBe('slip');
   });
 });
+
+describe('per-step photo size', () => {
+  it('uses the chosen edge, maps the old "small" to 960, ignores unknown sizes', async () => {
+    const { stepImageEdge } = await import('../../src/shared/types');
+    expect(stepImageEdge({})).toBeUndefined();
+    expect(stepImageEdge({ imageEdge: 800 })).toBe(800);
+    expect(stepImageEdge({ imageSize: 'small' })).toBe(960);
+    expect(stepImageEdge({ imageEdge: 1234 })).toBeUndefined();
+  });
+});

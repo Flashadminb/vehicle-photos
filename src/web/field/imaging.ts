@@ -156,7 +156,7 @@ export function createImaging(opts: ImagingOptions): Imaging {
       decoded.delete(original);
       try {
         // Display copy with the timestamp…
-        const { w, h } = fit(bmp.width, bmp.height, Math.min(opts.displayEdge, ro?.displayEdge ?? Infinity));
+        const { w, h } = fit(bmp.width, bmp.height, ro?.displayEdge ?? opts.displayEdge);
         const { canvas, ctx } = canvasFor(w, h);
         ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(bmp, 0, 0, w, h);
