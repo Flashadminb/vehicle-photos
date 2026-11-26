@@ -143,6 +143,61 @@ function DriveSpace({ connected }: { connected: boolean }) {
   );
 }
 
+/** Folder layout <root>/<profile>/<date>/<set>, and moving sets made before profile folders existed. */
+function DriveLayout({ connected }: { connected: boolean }) {
+  const me = useMe();
+  const [info, setInfo] = useState<{ oldLayoutSets: number; queued: number } | null>(null);
+  const [msg, setMsg] = useState('');
+  const load = () => api('GET', '/api/admin/drive/layout').then(setInfo, () => undefined);
+  useEffect(() => {
+    if (connected) void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected]);
+  if (!connected) return null;
+  return (
+    <section className="card section">
+      <h2>โครงสร้างโฟลเดอร์ใน Drive</h2>
+      <pre className="layout-tree">{`โฟลเดอร์หลัก
+├─ <รูปแบบการถ่าย เช่น หน้างาน>
+│   └─ 2026-11-26
+│       └─ 21-42-10_ทะเบียน_เลขบาร์_PF-000123
+└─ <รูปแบบการถ่าย เช่น ป้อมยาม>
+    └─ 2026-11-26
+        └─ …`}</pre>
+      <p className="small muted">
+        แต่ละรูปแบบการถ่ายมีโฟลเดอร์ของตัวเอง สร้างให้อัตโนมัติเมื่อมีรูปแบบใหม่ และเปลี่ยนชื่อตามเมื่อเปลี่ยนชื่อรูปแบบ (โฟลเดอร์เดิม ลิงก์เดิม) ·
+        ลบรูปแบบแล้ว โฟลเดอร์และรูปยังอยู่ใน Drive
+      </p>
+      {info && info.oldLayoutSets > 0 && (
+        <div className="banner banner-warn small layout-move">
+          <span>
+            มี <strong>{info.oldLayoutSets.toLocaleString()}</strong> ชุดที่ถ่ายก่อนแยกโฟลเดอร์ตามรูปแบบ (อยู่ใน โฟลเดอร์หลัก/วันที่/…)
+            {info.queued > 0 && <> · กำลังย้ายอยู่ {info.queued} ชุด</>}
+          </span>
+          {me.can('drive.manage') && (
+            <button
+              className="btn btn-sm"
+              onClick={async () => {
+                try {
+                  const r = await api<{ queued: number }>('POST', '/api/admin/drive/reorganize');
+                  setMsg(`กำลังย้าย ${r.queued} ชุดเข้าโฟลเดอร์ของรูปแบบ (ทันที 8 ชุด ที่เหลือ ~10 ชุดทุก 15 นาที) · เป็นการย้ายเท่านั้น ไม่มีการลบ ลิงก์เดิมยังใช้ได้`);
+                  void load();
+                } catch (e) {
+                  setMsg((e as Error).message);
+                }
+              }}
+            >
+              ย้ายชุดเก่าเข้าโฟลเดอร์รูปแบบ
+            </button>
+          )}
+        </div>
+      )}
+      {info && info.oldLayoutSets === 0 && <p className="small">✓ ทุกชุดอยู่ในโฟลเดอร์ของรูปแบบแล้ว</p>}
+      {msg && <p className="banner banner-ok small">{msg}</p>}
+    </section>
+  );
+}
+
 export function DriveStorage() {
   const me = useMe();
   const [drive, setDrive] = useState<any>(null);
@@ -314,6 +369,7 @@ export function DriveStorage() {
         )}
       </section>
 
+      <DriveLayout connected={drive.mode === 'demo' || (drive.connected && drive.rootOk)} />
       <DriveSpace connected={drive.mode === 'demo' || (drive.connected && drive.rootOk)} />
 
       <section className="card section">

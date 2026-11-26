@@ -1,6 +1,6 @@
 import type { Env } from '../env';
 
-export type JobKind = 'move_replaced' | 'ocr' | 'rename_folder' | 'drive_trash';
+export type JobKind = 'move_replaced' | 'ocr' | 'rename_folder' | 'drive_trash' | 'move_to_profile';
 
 export function enqueueStmt(env: Env, kind: JobKind, refId: string, payload: unknown = null, now = Date.now(), delayMs = 0) {
   return env.DB.prepare(

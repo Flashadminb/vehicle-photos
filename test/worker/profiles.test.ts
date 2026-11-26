@@ -100,4 +100,43 @@ describe('capture profiles (รูปแบบการถ่าย)', () => {
     await admin.json('POST', `/api/admin/sets/${roundId}/ocr`, { target: 'local', bulk: true });
     expect((await testEnv.DB.prepare(`SELECT plate_text FROM rounds WHERE id = ?`).bind(roundId).first<any>()).plate_text).toBe('70-1234 (ชลบุรี)');
   });
+
+  it('Drive: each profile has its own folder; renaming follows; old sets move without deleting', async () => {
+    const { client: admin } = await loggedIn('admin', 'super_admin');
+    const gate = (await admin.json('POST', '/api/admin/workflows', { name: 'ป้อมยาม2' })).body.id;
+    const guard = await loggedIn('field', 'operator');
+    await admin.json('PATCH', `/api/admin/users/${guard.user.id}`, { workflowId: gate });
+    const { roundId } = await captureWithBootstrap(guard.client);
+    const r = await testEnv.DB.prepare(`SELECT drive_folder_id, drive_date_folder_id, drive_layout FROM rounds WHERE id = ?`).bind(roundId).first<any>();
+    expect(r.drive_layout).toBe(2);
+    const dateFolder = await testEnv.DB.prepare(`SELECT parent_id FROM demo_drive_files WHERE id = ?`).bind(r.drive_date_folder_id).first<any>();
+    const profileFolder = await testEnv.DB.prepare(`SELECT id, name, parent_id FROM demo_drive_files WHERE id = ?`).bind(dateFolder.parent_id).first<any>();
+    expect(profileFolder.name).toBe('ป้อมยาม2');
+    expect(profileFolder.parent_id).toBe('demo-root');
+
+    // Renaming the profile renames the same folder.
+    await admin.json('PATCH', `/api/admin/workflows/${gate}`, { name: 'ป้อมยามหน้า' });
+    expect((await testEnv.DB.prepare(`SELECT name FROM demo_drive_files WHERE id = ?`).bind(profileFolder.id).first<any>()).name).toBe('ป้อมยามหน้า');
+
+    // An old-layout set (<root>/<date>/<set>) is moved into its profile folder — same folder ID.
+    const op = await loggedIn('field', 'operator');
+    const old = await captureWithBootstrap(op.client);
+    const { DemoDrive, DEMO_ROOT_ID } = await import('../../src/worker/drive/demo');
+    const drive = new DemoDrive(testEnv, 'http://test.local');
+    const oldDate = await drive.createFolder(DEMO_ROOT_ID, '2026-01-01');
+    const o = await testEnv.DB.prepare(`SELECT drive_folder_id, drive_date_folder_id FROM rounds WHERE id = ?`).bind(old.roundId).first<any>();
+    await drive.move(o.drive_folder_id, o.drive_date_folder_id, oldDate.id);
+    await testEnv.DB.prepare(`UPDATE rounds SET drive_layout = 1, drive_date_folder_id = ?, drive_root_folder_id = ? WHERE id = ?`).bind(oldDate.id, DEMO_ROOT_ID, old.roundId).run();
+    expect((await admin.json('GET', '/api/admin/drive/layout')).body.oldLayoutSets).toBeGreaterThanOrEqual(1);
+    expect((await admin.json('POST', '/api/admin/drive/reorganize')).body.queued).toBeGreaterThanOrEqual(1);
+    const { processJobs } = await import('../../src/worker/services/maintenance');
+    await processJobs(testEnv, 50);
+    const after = await testEnv.DB.prepare(`SELECT drive_folder_id, drive_date_folder_id, drive_layout FROM rounds WHERE id = ?`).bind(old.roundId).first<any>();
+    expect(after.drive_layout).toBe(2);
+    expect(after.drive_folder_id).toBe(o.drive_folder_id);
+    const newDate = await testEnv.DB.prepare(`SELECT parent_id FROM demo_drive_files WHERE id = ?`).bind(after.drive_date_folder_id).first<any>();
+    const defaultFolder = (await testEnv.DB.prepare(`SELECT drive_folder_id FROM workflows WHERE id = 'default'`).first<any>()).drive_folder_id;
+    expect(newDate.parent_id).toBe(defaultFolder);
+    expect((await testEnv.DB.prepare(`SELECT parent_id FROM demo_drive_files WHERE id = ?`).bind(o.drive_folder_id).first<any>()).parent_id).toBe(after.drive_date_folder_id);
+  });
 });

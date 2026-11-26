@@ -23,7 +23,7 @@ plan, and quota/cost considerations.
                                  │ OAuth refresh token (encrypted in D1)
                                  ▼
                          Google Drive (system of record for photos)
-                         Root/YYYY-MM-DD/HH-mm-ss_PLATE_PF-000001/
+                         Root/<capture profile>/YYYY-MM-DD/HH-mm-ss_PLATE_BAR_PF-000001/
 ```
 
 * **One Worker** serves the API and both static apps from the same origin (no CORS,
@@ -100,7 +100,7 @@ make that swap contained.
   dashboard ("Give view access" → Drive `permissions.create`, reader, no email
   notification). Removing a dashboard user does **not** remove their Google access; do
   that in Drive as part of off-boarding.
-* **Folder rules:** date folder from the round's first accepted image time in Bangkok;
+* **Folder rules:** each capture profile has its own folder under the root (renamed with the profile; sets made before this are moved by the "ย้ายชุดเก่า" button — moves only); date folder from the round's first accepted image time in Bangkok;
   created once per day with a D1 lease (Drive allows duplicate names) and a re-list that
   keeps the oldest folder if a duplicate appears; round folder created on the first
   image (`HH-mm-ss_<plate or ไม่ระบุ>_PF-000001`); renamed (same ID) when OCR finishes or an

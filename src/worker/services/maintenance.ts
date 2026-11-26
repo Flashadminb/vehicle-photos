@@ -1,7 +1,7 @@
 import type { Env } from '../env';
 import { getDrive, effectiveRoot } from '../drive';
 import { bangkokDate } from '../../shared/time';
-import { ensureDateFolder, ensureReplacedFolder, syncRoundFolderName } from '../drive/folders';
+import { ensureDateFolder, ensureProfileFolder, ensureReplacedFolder, moveRoundToProfileLayout, syncRoundFolderName } from '../drive/folders';
 import type { DriveClient } from '../drive/types';
 import { getSettings } from './config';
 import { claimDueJobs, completeJob, failJob, enqueue, type JobRow } from './jobs';
@@ -13,6 +13,10 @@ import { runTrashJob } from './drivetrash';
 export async function runJob(env: Env, drive: DriveClient, job: JobRow, baseUrl = ''): Promise<void | 'deferred'> {
   if (job.kind === 'rename_folder') {
     await syncRoundFolderName(env, drive, job.ref_id);
+    return;
+  }
+  if (job.kind === 'move_to_profile') {
+    await moveRoundToProfileLayout(env, drive, job.ref_id);
     return;
   }
   if (job.kind === 'drive_trash') {
@@ -152,11 +156,18 @@ export async function precreateDateFolders(env: Env, now = Date.now()) {
   const tomorrow = bangkokDate(now + 3600_000);
   if (tomorrow !== dates[0]) dates.push(tomorrow);
   const drive = getDrive(env, env.PUBLIC_BASE_URL ?? '');
-  for (const d of dates) {
-    try {
-      await ensureDateFolder(env, drive, root, d);
-    } catch (e) {
-      console.warn('precreate date folder failed', d, (e as Error).message);
+  // Every capture profile someone uses gets its own <root>/<profile>/<date> folder ahead of time.
+  const { results } = await env.DB.prepare(
+    `SELECT DISTINCT COALESCE(u.workflow_id, 'default') AS wf FROM users u JOIN workflows w ON w.id = COALESCE(u.workflow_id, 'default')
+     WHERE u.disabled = 0 AND u.deleted_at IS NULL AND u.role != 'reviewer' AND w.archived_at IS NULL`,
+  ).all<{ wf: string }>();
+  for (const { wf } of results) {
+    for (const d of dates) {
+      try {
+        await ensureDateFolder(env, drive, await ensureProfileFolder(env, drive, root, wf), d);
+      } catch (e) {
+        console.warn('precreate date folder failed', wf, d, (e as Error).message);
+      }
     }
   }
 }

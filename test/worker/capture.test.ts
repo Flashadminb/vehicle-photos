@@ -216,7 +216,10 @@ describe('Drive folders', () => {
         beginImage(testEnv, user, { clientRoundId: rid(), clientImageId: rid(), workflowVersionId: wf.id, stepId: wf.steps[0].id, source: 'camera', acceptedAtDevice: when }, opts),
       ),
     );
-    const folders = await drive.findFolders('demo-root', '2026-08-01');
+    // Layout: <root>/<profile>/<date>/<set> — one profile folder, one date folder inside it.
+    const profiles = await drive.findFolders('demo-root', 'ทั่วไป');
+    expect(profiles).toHaveLength(1);
+    const folders = await drive.findFolders(profiles[0].id, '2026-08-01');
     expect(folders).toHaveLength(1);
   });
 
@@ -256,13 +259,14 @@ describe('date folder pre-creation', () => {
     try {
       const when = bangkokToUtc('2026-09-01', '00:05:00');
       await precreateDateFolders(testEnv, when);
-      expect((await drive.findFolders('demo-root', '2026-09-01')).length).toBe(1);
+      const profile = (await testEnv.DB.prepare(`SELECT drive_folder_id FROM workflows WHERE id = 'default'`).first<any>()).drive_folder_id;
+      expect((await drive.findFolders(profile, '2026-09-01')).length).toBe(1);
       const calls = drive.calls.length;
       await precreateDateFolders(testEnv, when + 15 * 60_000);
       expect(drive.calls.length).toBe(calls); // D1 says it exists: no Drive call
       // Last hour of the day: tomorrow's folder is prepared too.
       await precreateDateFolders(testEnv, bangkokToUtc('2026-09-01', '23:10:00'));
-      expect((await drive.findFolders('demo-root', '2026-09-02')).length).toBe(1);
+      expect((await drive.findFolders(profile, '2026-09-02')).length).toBe(1);
     } finally {
       setDriveOverride(null);
     }

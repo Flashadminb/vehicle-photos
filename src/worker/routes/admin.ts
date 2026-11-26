@@ -41,7 +41,7 @@ import { normalizeBarCode } from '../../shared/plate';
 import { enqueue } from '../services/jobs';
 import { getDrive, isDemo, effectiveRoot } from '../drive';
 import { buildAuthUrl, clearToken, exchangeCode, loadToken, oauthRedirectUri, saveToken } from '../drive/google';
-import { syncRoundFolderName } from '../drive/folders';
+import { syncProfileFolderName, syncRoundFolderName } from '../drive/folders';
 import { publicIdFromSeq } from '../../shared/names';
 import { bangkokDate } from '../../shared/time';
 
@@ -210,6 +210,37 @@ admin.post('/sets/:id/drive-trash', requirePermission('drive.trash'), async (c) 
 
 admin.post('/sets/:id/drive-restore', requirePermission('drive.trash'), async (c) => {
   return c.json(await restoreRound(c.env, getDrive(c.env, baseUrl(c.req.url)), c.get('user'), c.req.param('id'), clientIp(c)));
+});
+
+/** Sets still stored as <root>/<date>/<set> (before profile folders). */
+admin.get('/drive/layout', requirePermission('storage.view'), async (c) => {
+  const r = await c.env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM rounds WHERE drive_layout = 1 AND drive_folder_id IS NOT NULL AND drive_trashed_at IS NULL`,
+  ).first<{ n: number }>();
+  const q = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM jobs WHERE kind = 'move_to_profile' AND status IN ('pending','running')`).first<{ n: number }>();
+  return c.json({ oldLayoutSets: r?.n ?? 0, queued: q?.n ?? 0 });
+});
+
+/** Move old-layout sets into <root>/<profile>/<date>/<set>. Moves only — nothing is deleted. */
+admin.post('/drive/reorganize', requirePermission('drive.manage'), async (c) => {
+  const now = Date.now();
+  const { results } = await c.env.DB.prepare(
+    `SELECT r.id FROM rounds r WHERE r.drive_layout = 1 AND r.drive_folder_id IS NOT NULL AND r.drive_trashed_at IS NULL
+       AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.kind = 'move_to_profile' AND j.ref_id = r.id AND j.status IN ('pending','running'))
+     LIMIT 500`,
+  ).all<{ id: string }>();
+  for (let i = 0; i < results.length; i += 90) {
+    const chunk = results.slice(i, i + 90).map((r) => r.id);
+    await c.env.DB.prepare(
+      `INSERT INTO jobs (kind, ref_id, payload, status, attempts, next_run_at, created_at, updated_at)
+       SELECT 'move_to_profile', id, NULL, 'pending', 0, ?, ?, ? FROM rounds WHERE id IN (${chunk.map(() => '?').join(',')})`,
+    )
+      .bind(now, now, now, ...chunk)
+      .run();
+  }
+  if (results.length) c.executionCtx.waitUntil(processJobs(c.env, 8, baseUrl(c.req.url)).catch(() => undefined));
+  await audit(c.env, c.get('user'), 'drive.reorganize', {}, { queued: results.length }, clientIp(c), now);
+  return c.json({ queued: results.length });
 });
 
 admin.get('/drive/usage', requirePermission('storage.view'), async (c) => {
@@ -392,6 +423,12 @@ admin.patch('/workflows/:id', requirePermission('config.edit'), async (c) => {
   const { name } = await readJson<{ name: string }>(c);
   if (!(await profileExists(c.env, id))) throw notFound('ไม่พบรูปแบบการถ่ายนี้');
   await c.env.DB.prepare(`UPDATE workflows SET name = ? WHERE id = ?`).bind(str(name, 'name', { min: 1, max: 40 }), id).run();
+  // The profile's Drive folder follows the new name (same folder, same links).
+  try {
+    await syncProfileFolderName(c.env, getDrive(c.env, baseUrl(c.req.url)), id);
+  } catch (e) {
+    console.warn('profile folder rename failed', e);
+  }
   await audit(c.env, c.get('user'), 'workflow_profile.renamed', { type: 'workflow', id }, { name }, clientIp(c));
   return c.json({ ok: true });
 });
