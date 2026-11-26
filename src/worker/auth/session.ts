@@ -75,7 +75,7 @@ export async function login(c: Context<AppBindings>, kind: SessionKind, username
   const ok = row ? await verifyPassword(password, row.password_hash) : false;
   if (!row || !ok) {
     await recordFail(env, keys, now);
-    throw new ApiError(401, 'invalid_credentials', 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+    throw new ApiError(401, 'invalid_credentials', 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง (ใช้ชื่อผู้ใช้ภาษาอังกฤษ ไม่ใช่ชื่อที่แสดง)');
   }
   if (row.disabled) throw new ApiError(403, 'disabled', 'บัญชีนี้ถูกปิดใช้งาน');
   if (!ALLOWED_ROLES[kind].includes(row.role)) {

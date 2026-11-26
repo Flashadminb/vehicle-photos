@@ -115,3 +115,20 @@ describe('permanent member delete', () => {
     expect((await plainAdmin.json('DELETE', `/api/admin/users/${plain.id}`, { confirm: plain.username })).status).not.toBe(200);
   });
 });
+
+describe('admin-set passwords', () => {
+  it('reset with a chosen password lets the member in and clears an earlier lockout; generated ones avoid look-alikes', async () => {
+    const h = await import('./helpers');
+    const { client: admin } = await h.loggedIn('admin', 'super_admin');
+    const u = await h.createUser('operator');
+    // Lock the account with wrong attempts.
+    for (let i = 0; i < 5; i++) await new h.Client().json('POST', '/api/field/login', { username: u.user.username, password: 'nope-nope' });
+    expect((await new h.Client().json('POST', '/api/field/login', { username: u.user.username, password: 'x' })).status).toBe(429);
+    const r = await admin.json('POST', `/api/admin/users/${u.user.id}/reset-password`, { password: 'gate-2026-a' });
+    expect(r.body.temporaryPassword).toBe('gate-2026-a');
+    const field = new h.Client();
+    expect((await field.json('POST', '/api/field/login', { username: ` ${u.user.username.toUpperCase()} `, password: 'gate-2026-a' })).status).toBe(200);
+    const gen = await admin.json('POST', `/api/admin/users/${u.user.id}/reset-password`, {});
+    expect(gen.body.temporaryPassword).toMatch(/^[a-hjkmnp-z2-9]{10}$/);
+  });
+});

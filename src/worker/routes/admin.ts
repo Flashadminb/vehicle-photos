@@ -479,8 +479,17 @@ function assertCanManage(actor: AuthUser, targetRole: Role, newRole?: Role) {
   if (!roles.includes(targetRole) || (newRole && !roles.includes(newRole))) throw forbidden('คุณจัดการผู้ใช้บทบาทนี้ไม่ได้');
 }
 
+/** Temporary passwords avoid look-alike characters (0/O, 1/l/I) so they can be read off a screen and typed. */
 function tempPassword() {
-  return randomToken(9).replace(/[-_]/g, 'x');
+  const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
+  const bytes = crypto.getRandomValues(new Uint8Array(10));
+  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
+}
+
+/** Clear failed-login lockouts of a user (after an admin sets a new password). */
+async function clearLoginLocks(env: AppBindings['Bindings'], username: string) {
+  const u = username.toLowerCase();
+  await env.DB.prepare(`DELETE FROM login_attempts WHERE key IN (?, ?)`).bind(`u:field:${u}`, `u:admin:${u}`).run();
 }
 
 /** Presence ping: the auth middleware refreshes the session's last-seen time. */
@@ -529,7 +538,7 @@ admin.post('/users', requirePermission('users.manage'), async (c) => {
     throw e;
   }
   await audit(c.env, actor, 'user.created', { type: 'user', id }, { username, role: body.role }, clientIp(c));
-  return c.json({ id, temporaryPassword: generated });
+  return c.json({ id, temporaryPassword: generated ?? body.password, username });
 });
 
 /**
@@ -611,14 +620,17 @@ admin.post('/users/:id/reset-password', requirePermission('users.manage'), async
   const target = await c.env.DB.prepare(`SELECT * FROM users WHERE id = ?`).bind(id).first<any>();
   if (!target) throw notFound('User not found.');
   assertCanManage(actor, target.role);
-  const pw = tempPassword();
+  // The admin may set a password themselves (e.g. easy to read out); otherwise one is generated.
+  const { password } = await readJson<{ password?: string }>(c).catch(() => ({ password: undefined }));
+  const pw = password ? validateNewPassword(String(password)) : tempPassword();
   const now = Date.now();
   await c.env.DB.prepare(`UPDATE users SET password_hash = ?, must_change_password = 1, updated_at = ? WHERE id = ?`)
     .bind(await createPasswordHash(c.env, pw), now, id)
     .run();
   await revokeUserSessions(c.env, id, now);
+  await clearLoginLocks(c.env, target.username);
   await audit(c.env, actor, 'user.password_reset', { type: 'user', id }, undefined, clientIp(c), now);
-  return c.json({ temporaryPassword: pw });
+  return c.json({ temporaryPassword: pw, username: target.username });
 });
 
 admin.post('/users/:id/revoke-sessions', requirePermission('users.manage'), async (c) => {

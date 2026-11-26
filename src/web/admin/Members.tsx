@@ -16,7 +16,9 @@ export function Members() {
   const me = useMe();
   const [users, setUsers] = useState<any[]>([]);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [form, setForm] = useState({ username: '', displayName: '', role: 'operator' as Role, workflowId: 'default' });
+  const [form, setForm] = useState({ username: '', displayName: '', role: 'operator' as Role, workflowId: 'default', password: '' });
+  /** Login details to hand over after creating / resetting a member (shown once). */
+  const [cred, setCred] = useState<{ username: string; password: string } | null>(null);
   const [profiles, setProfiles] = useState<{ id: string; name: string }[]>([]);
 
   const load = () => api<{ users: any[] }>('GET', '/api/admin/users').then((r) => setUsers(r.users), (e) => setMsg({ ok: false, text: e.message }));
@@ -51,6 +53,29 @@ export function Members() {
           {msg.text}
         </p>
       )}
+      {cred && (
+        <section className="card section cred-card" aria-live="polite">
+          <h2>ข้อมูลเข้าระบบ (แสดงครั้งเดียว)</h2>
+          <dl>
+            <dt>ลิงก์แอปหน้างาน</dt>
+            <dd className="mono">{location.origin}/</dd>
+            <dt>ชื่อผู้ใช้</dt>
+            <dd className="mono cred-big">{cred.username}</dd>
+            <dt>รหัสผ่าน</dt>
+            <dd className="mono cred-big">{cred.password}</dd>
+          </dl>
+          <p className="small muted">ตัวพิมพ์เล็กทั้งหมด ไม่มีเลข 0/1 หรือตัว o/l ให้สับสน · เจ้าตัวต้องตั้งรหัสใหม่เมื่อเข้าครั้งแรก · ส่งแบบส่วนตัวเท่านั้น</p>
+          <div className="details-actions">
+            <button
+              className="btn btn-primary"
+              onClick={() => void navigator.clipboard?.writeText(`แอปถ่ายรูปรถ: ${location.origin}/\nชื่อผู้ใช้: ${cred.username}\nรหัสผ่าน: ${cred.password}`).then(() => setMsg({ ok: true, text: 'คัดลอกแล้ว วางส่งในแชทส่วนตัวได้เลย' }))}
+            >
+              คัดลอกข้อความสำหรับส่ง
+            </button>
+            <button className="btn" onClick={() => setCred(null)}>ปิด</button>
+          </div>
+        </section>
+      )}
       <section className="card section">
         <h2>เพิ่มสมาชิก</h2>
         <form
@@ -58,10 +83,13 @@ export function Members() {
           onSubmit={(e) => {
             e.preventDefault();
             void run(
-              () => api('POST', '/api/admin/users', form),
-              (r) => `สร้าง ${form.username} แล้ว รหัสผ่านชั่วคราว: ${r.temporaryPassword} — ส่งให้เจ้าตัวแบบส่วนตัว และต้องเปลี่ยนรหัสเมื่อเข้าระบบครั้งแรก`,
+              () => api('POST', '/api/admin/users', { ...form, password: form.password || undefined }),
+              (r) => {
+                setCred({ username: r.username, password: r.temporaryPassword });
+                return `สร้าง ${r.username} แล้ว`;
+              },
             );
-            setForm({ username: '', displayName: '', role: 'operator', workflowId: form.workflowId });
+            setForm({ username: '', displayName: '', role: 'operator', workflowId: form.workflowId, password: '' });
           }}
         >
           <label className="field">
@@ -94,6 +122,10 @@ export function Members() {
               </select>
             </label>
           )}
+          <label className="field">
+            <span>รหัสผ่านเริ่มต้น (ไม่บังคับ)</span>
+            <input className="input" value={form.password} minLength={8} placeholder="เว้นว่าง = สุ่มให้" autoComplete="off" onChange={(e) => setForm({ ...form, password: e.target.value })} />
+          </label>
           <div className="field">
             <span>&nbsp;</span>
             <button className="btn btn-primary">สร้างสมาชิก</button>
@@ -185,7 +217,20 @@ export function Members() {
                     <td>
                       {editable && (
                         <div className="row-actions">
-                          <button className="btn btn-sm" onClick={() => confirm(`รีเซ็ตรหัสผ่านของ ${u.username}?`) && void run(() => api('POST', `/api/admin/users/${u.id}/reset-password`), (r) => `รหัสผ่านชั่วคราวของ ${u.username}: ${r.temporaryPassword}`)}>
+                          <button
+                            className="btn btn-sm"
+                            onClick={() => {
+                              const pw = prompt(`รีเซ็ตรหัสผ่านของ ${u.username}\n\nพิมพ์รหัสใหม่เอง (อย่างน้อย 8 ตัว) หรือเว้นว่างแล้วกด OK เพื่อให้ระบบสุ่มให้\n(เจ้าตัวต้องเปลี่ยนรหัสเมื่อเข้าระบบครั้งแรก)`, '');
+                              if (pw == null) return;
+                              void run(
+                                () => api('POST', `/api/admin/users/${u.id}/reset-password`, pw.trim() ? { password: pw.trim() } : {}),
+                                (r) => {
+                                  setCred({ username: r.username, password: r.temporaryPassword });
+                                  return `ตั้งรหัสผ่านใหม่ให้ ${u.username} แล้ว`;
+                                },
+                              );
+                            }}
+                          >
                             รีเซ็ตรหัสผ่าน
                           </button>
                           <button className="btn btn-sm" onClick={() => void run(() => api('POST', `/api/admin/users/${u.id}/revoke-sessions`), () => `ออกจากระบบ ${u.username} ทุกอุปกรณ์แล้ว`)}>
