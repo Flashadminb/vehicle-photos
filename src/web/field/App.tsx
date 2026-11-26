@@ -10,6 +10,7 @@ import { httpTransport } from './transport';
 import { createImaging, readExifTime } from './imaging';
 import { useCamera, useWakeLock, Viewfinder, vibrate } from './camera';
 import { usePresence } from '../shared/presence';
+import { decodeSlipBarcode } from './barcode';
 
 type Boot = FieldBootstrap & { mustChangePassword: boolean };
 
@@ -265,7 +266,9 @@ function Capture({ boot, reload, onSignedOut }: { boot: Boot; reload: () => Prom
       vibrate(30);
       setFlashKey((k) => k + 1);
       const index = s.stepIndex;
-      await engine.accept(step.id, blob, 'camera', { captureTime });
+      // Slip steps: decode the barcode on the phone (fast, exact; skipped where unsupported).
+      const barCode = stepGuide(step)?.startsWith('slip') || step.ocrKind === 'document' ? await decodeSlipBarcode(blob) : null;
+      await engine.accept(step.id, blob, 'camera', { captureTime, barCode });
       setJustShot({ stepId: step.id, index });
     } catch {
       cameraInput.current?.click(); // camera hiccup: fall back to the phone's camera app
@@ -291,7 +294,8 @@ function Capture({ boot, reload, onSignedOut }: { boot: Boot; reload: () => Prom
     const captureTime = source === 'camera' ? Date.now() : null;
     try {
       const exifTime = source === 'upload' ? await readExifTime(file) : null;
-      await engine.accept(step.id, file, source, { captureTime, exifTime });
+      const barCode = stepGuide(step)?.startsWith('slip') || step.ocrKind === 'document' ? await decodeSlipBarcode(file) : null;
+      await engine.accept(step.id, file, source, { captureTime, exifTime, barCode });
     } catch (err) {
       setNotice((err as Error).message === 'upload_not_allowed' ? t('upload_not_allowed') : t('error_generic'));
     }

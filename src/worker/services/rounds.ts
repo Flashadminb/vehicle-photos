@@ -1,3 +1,4 @@
+import { applyBarCode } from './ocr';
 import type { AuthUser, Env } from '../env';
 import type {
   BeginImageRequest,
@@ -277,6 +278,10 @@ export async function completeImage(
   const after = await env.DB.prepare(`SELECT active, status, uploaded_at FROM images WHERE id = ?`).bind(imageId).first<any>();
   const workflow = await getWorkflow(env, round.workflow_version_id);
   const step = workflow?.steps.find((s) => s.id === image.step_id);
+  // A bar number decoded on the phone is the most reliable automatic source.
+  if (after.active && input.barCode && (await applyBarCode(env, round.id, String(input.barCode), 'device', now))) {
+    await enqueueStmt(env, 'rename_folder', round.id, null, now).run();
+  }
   if (!after.active) {
     await enqueueStmt(env, 'move_replaced', imageId, null, now).run();
   } else if (step?.ocr && settings.ocrProvider !== 'none' && round.plate_source !== 'manual') {

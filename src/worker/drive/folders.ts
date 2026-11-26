@@ -76,7 +76,7 @@ export async function ensureRoundFolder(env: Env, drive: DriveClient, roundId: s
     if (lease.meta.changes === 1) {
       try {
         const dateFolderId = await ensureDateFolder(env, drive, rootId, r.op_date);
-        const name = roundFolderName(r.started_at, r.plate_text || r.unknown_label, r.public_id);
+        const name = roundFolderName(r.started_at, r.plate_text || r.unknown_label, r.public_id, r.bar_code);
         // Reuse a folder from an earlier attempt that created it but crashed before saving.
         const existing = (await drive.findFolders(dateFolderId, name))[0];
         const folder = existing ?? (await drive.createFolder(dateFolderId, name));
@@ -107,7 +107,7 @@ export async function ensureRoundFolder(env: Env, drive: DriveClient, roundId: s
 export async function syncRoundFolderName(env: Env, drive: DriveClient, roundId: string) {
   const r = await env.DB.prepare(`SELECT * FROM rounds WHERE id = ?`).bind(roundId).first<any>();
   if (!r?.drive_folder_id) return null;
-  const name = roundFolderName(r.started_at, r.plate_text || r.unknown_label, r.public_id);
+  const name = roundFolderName(r.started_at, r.plate_text || r.unknown_label, r.public_id, r.bar_code);
   if (name !== r.drive_folder_name) {
     await drive.rename(r.drive_folder_id, name);
     await env.DB.prepare(`UPDATE rounds SET drive_folder_name = ?, updated_at = ? WHERE id = ?`).bind(name, Date.now(), roundId).run();

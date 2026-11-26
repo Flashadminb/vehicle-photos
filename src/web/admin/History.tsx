@@ -171,8 +171,8 @@ export function History() {
           <input className="input" type="time" step={1} value={endTime} onChange={(e) => setEndTime(e.target.value.length === 5 ? e.target.value + ':00' : e.target.value)} disabled={!range} />
         </label>
         <label className="field grow">
-          <span>ค้นหาทะเบียน ผู้ถ่าย หรือรหัสชุด</span>
-          <input className="input" type="search" placeholder="เช่น กข 1234, 1234, PF-000123, สมชาย" value={q} onChange={(e) => setQ(e.target.value)} />
+          <span>ค้นหาทะเบียน เลขบาร์ ผู้ถ่าย หรือรหัสชุด</span>
+          <input className="input" type="search" placeholder="เช่น กข 1234, 1234, SAM1VFKD36, VFKD36, PF-000123, สมชาย" value={q} onChange={(e) => setQ(e.target.value)} />
         </label>
         {profiles.length > 1 && (
           <label className="field">
@@ -206,6 +206,7 @@ export function History() {
             <option value="">ทั้งหมด</option>
             <option value="missing">ไม่ระบุ (ยังไม่มีทะเบียน)</option>
             <option value="unsure">อ่านอัตโนมัติแบบไม่แน่ใจ (⚠ ต่ำกว่า 80%)</option>
+            <option value="nobar">ยังไม่มีเลขบาร์รถ</option>
           </select>
         </label>
         <label className="field">
@@ -360,6 +361,7 @@ export function History() {
                   onDelete={me.can('sets.remove') ? () => setDeleting([r.id]) : undefined}
                   profileName={profiles.length > 1 ? profiles.find((p) => p.id === r.workflowId)?.name : undefined}
                   canEditPlate={me.can('sets.editPlate')}
+                  onBarSaved={(barCode) => setData((d) => (d ? { ...d, rows: d.rows.map((x) => (x.id === r.id ? { ...x, barCode, barCodeSource: barCode ? 'manual' : 'none' } : x)) } : d))}
                   onPlateSaved={(plate) =>
                     setData((d) => (d ? { ...d, rows: d.rows.map((x) => (x.id === r.id ? { ...x, plate, plateDisplay: plate || x.plateDisplay, plateSource: plate ? 'manual' : 'none', plateConfidence: null } : x)) } : d))
                   }
@@ -410,6 +412,7 @@ function Row({
   profileName,
   canEditPlate,
   onPlateSaved,
+  onBarSaved,
 }: {
   r: SetRow;
   checked: boolean;
@@ -420,6 +423,7 @@ function Row({
   profileName?: string;
   canEditPlate?: boolean;
   onPlateSaved?: (plate: string | null) => void;
+  onBarSaved?: (bar: string | null) => void;
 }) {
   const complete = r.activeCount >= r.requiredCount;
   return (
@@ -437,6 +441,14 @@ function Row({
         ) : (
           <span className="muted">{r.plateDisplay}</span>
         )}
+        <div className="bar-line small">
+          <span className="muted">บาร์ </span>
+          {canEditPlate && r.status !== 'open' ? (
+            <PlateEdit kind="bar" setId={r.id} plate={r.barCode ?? null} placeholder="—" onSaved={(b) => onBarSaved?.(b)} />
+          ) : (
+            <span className="mono">{r.barCode ?? '—'}</span>
+          )}
+        </div>
         {r.plateSource === 'manual' && <span className="pill pill-info tiny" title="แก้ไขโดยผู้ดูแล">แก้ไขแล้ว</span>}
         {r.plateSource === 'ocr' && r.plateConfidence != null && (
           <span
@@ -528,6 +540,17 @@ function SetViewer({ id, onClose, onChanged }: { id: string; onClose: () => void
             plate={d.set.plate}
             placeholder={d.set.plateDisplay}
             startEditing={!d.set.plate}
+            onSaved={() => {
+              reload();
+              onChanged?.();
+            }}
+          />
+          <span className="small muted">เลขบาร์</span>
+          <PlateEdit
+            kind="bar"
+            setId={id}
+            plate={d.set.barCode ?? null}
+            placeholder="ยังไม่มี"
             onSaved={() => {
               reload();
               onChanged?.();
@@ -974,12 +997,15 @@ function PlateEdit({
   placeholder,
   startEditing,
   onSaved,
+  kind = 'plate',
 }: {
   setId: string;
   plate: string | null;
   placeholder: string;
   startEditing?: boolean;
   onSaved: (plate: string | null) => void;
+  /** 'plate' = ทะเบียน, 'bar' = เลขบาร์รถ */
+  kind?: 'plate' | 'bar';
 }) {
   const [editing, setEditing] = useState(!!startEditing);
   const [value, setValue] = useState(plate ?? '');
@@ -992,9 +1018,15 @@ function PlateEdit({
     setBusy(true);
     setErr('');
     try {
-      await api('PUT', `/api/admin/sets/${setId}/plate`, { plate: v });
-      setEditing(false);
-      onSaved(v || null);
+      if (kind === 'bar') {
+        const r = await api<{ barCode: string | null }>('PUT', `/api/admin/sets/${setId}/barcode`, { barCode: v });
+        setEditing(false);
+        onSaved(r.barCode);
+      } else {
+        await api('PUT', `/api/admin/sets/${setId}/plate`, { plate: v });
+        setEditing(false);
+        onSaved(v || null);
+      }
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -1003,8 +1035,8 @@ function PlateEdit({
   }
   if (!editing) {
     return (
-      <button type="button" className="plate-edit-view" onClick={() => setEditing(true)} title="คลิกเพื่อแก้ทะเบียน">
-        {plate ? <strong>{plate}</strong> : <span className="muted">{placeholder}</span>}
+      <button type="button" className={`plate-edit-view ${kind === 'bar' ? 'is-bar' : ''}`} onClick={() => setEditing(true)} title={kind === 'bar' ? 'คลิกเพื่อแก้เลขบาร์รถ' : 'คลิกเพื่อแก้ทะเบียน'}>
+        {plate ? kind === 'bar' ? <span className="mono">{plate}</span> : <strong>{plate}</strong> : <span className="muted">{placeholder}</span>}
         <span className="plate-edit-pen" aria-hidden>✏️</span>
       </button>
     );
@@ -1015,9 +1047,9 @@ function PlateEdit({
         className="input input-sm"
         value={value}
         autoFocus
-        maxLength={60}
-        placeholder="เช่น บร 7865 (เพชรบุรี)"
-        aria-label="ทะเบียน"
+        maxLength={kind === 'bar' ? 20 : 60}
+        placeholder={kind === 'bar' ? 'เช่น SAM1VFKD36' : 'เช่น บร 7865 (เพชรบุรี)'}
+        aria-label={kind === 'bar' ? 'เลขบาร์รถ' : 'ทะเบียน'}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter') void save();

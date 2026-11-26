@@ -15,10 +15,11 @@ export function sanitizeName(input: string, maxLength = 80): string {
   return s || '-';
 }
 
-/** HH-mm-ss_PLATE_ROUND-ID using the round's first accepted image time (Bangkok). */
-export function roundFolderName(startedAtMs: number, plateOrLabel: string, publicId: string): string {
-  const plate = sanitizeName(plateOrLabel, 40).replace(/ /g, '');
-  return `${bangkokTimeForName(startedAtMs)}_${plate}_${sanitizeName(publicId, 20)}`;
+/** HH-mm-ss_PLATE[_BAR]_ROUND-ID using the round's first accepted image time (Bangkok). */
+export function roundFolderName(startedAtMs: number, plateOrLabel: string, publicId: string, barCode?: string | null): string {
+  const plate = sanitizeName(plateOrLabel, 50).replace(/ /g, '');
+  const bar = barCode ? `_${sanitizeName(barCode, 20)}` : '';
+  return `${bangkokTimeForName(startedAtMs)}_${plate}${bar}_${sanitizeName(publicId, 20)}`;
 }
 
 /** 01_STEP-NAME.jpg */

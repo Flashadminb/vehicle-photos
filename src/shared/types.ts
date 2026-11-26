@@ -196,6 +196,8 @@ export interface CompleteImageRequest {
   originalFileId?: string | null;
   displayBytes?: number;
   originalBytes?: number;
+  /** Bar number decoded from the slip barcode on the phone (Android Chrome), if any. */
+  barCode?: string | null;
 }
 
 export interface CompleteImageResponse {
@@ -239,6 +241,9 @@ export interface SetRow {
   workflowId?: string;
   /** Confidence (0-1) of an automatic plate reading; null for manual/none. */
   plateConfidence?: number | null;
+  /** Dispatch-slip bar number ("เลขบาร์รถ"). */
+  barCode?: string | null;
+  barCodeSource?: 'none' | 'ocr' | 'device' | 'manual';
 }
 
 export interface SetListResponse {

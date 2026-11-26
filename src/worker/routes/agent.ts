@@ -95,7 +95,7 @@ agent.get('/jobs/:id/image', async (c) => {
 /** Report the result: { text, plate?, confidence? } or { error }. */
 agent.post('/jobs/:id/result', async (c) => {
   const job = await heldJob(c);
-  const body = await readJson<{ text?: string; plate?: string | null; confidence?: number | null; error?: string }>(c);
+  const body = await readJson<{ text?: string; plate?: string | null; confidence?: number | null; error?: string; barCode?: string | null }>(c);
   const now = Date.now();
   const a = c.get('agent');
   if (body.error) {
@@ -121,7 +121,12 @@ agent.post('/jobs/:id/result', async (c) => {
   const agentPlate = body.plate ? resultFromText(String(body.plate), null).plate : null;
   const agentRejected = body.plate === null && kind === 'plate';
   // Slips: the server's own parse keeps the whole printed ID + province; the agent's is a fallback.
-  const result = { ...parsed, plate: kind === 'document' ? (parsed.plate ?? agentPlate) : (agentPlate ?? (agentRejected ? null : parsed.plate)) };
+  const result = {
+    ...parsed,
+    plate: kind === 'document' ? (parsed.plate ?? agentPlate) : (agentPlate ?? (agentRejected ? null : parsed.plate)),
+    // The computer reads the bar number separately (English model) and sends it on its own.
+    barCode: parsed.barCode ?? (body.barCode ? String(body.barCode).slice(0, 20) : null),
+  };
   await applyOcrResult(c.env, getDrive(c.env, new URL(c.req.url).origin), job.ref_id, result, `ocr:local:${a.name}${kind === 'document' ? ':slip' : ''}`.slice(0, 60), now, kind);
   await c.env.DB.batch([
     c.env.DB.prepare(`UPDATE jobs SET status = 'done', updated_at = ? WHERE id = ?`).bind(now, job.id),

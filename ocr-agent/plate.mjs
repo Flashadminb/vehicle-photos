@@ -706,7 +706,54 @@ export async function readNearBarcode(base, worker, debugDir) {
  * may be taken sideways, so each rotation is tried until the "plate(province)" pattern is
  * found. A province that matches one of the 77 provinces makes the reading trustworthy.
  */
-export async function readDocument(buffer, { debugDir } = {}) {
+const BAR_TOKEN = /(?:^|[^A-Z0-9])([A-Z]{3}[0-9][A-Z0-9]{5,7})(?![A-Z0-9])/g;
+const isBar = (c) => /^[A-Z]{3}[0-9][A-Z0-9]{5,7}$/.test(c) && /[A-Z]/.test(c.slice(4));
+
+/** Bar number under the slip barcode ("เลขบาร์รถ"), e.g. SAM1VFKD36. Same rules as the server. */
+export function parseBarCode(text) {
+  // OCR often reads the "1" after the 3-letter prefix as I / l / |.
+  const t = (text || '').toUpperCase().replace(/(?<![A-Z0-9])([A-Z]{3})[IL|!]([A-Z0-9]{5,7})(?![A-Z0-9])/g, '$11$2');
+  const found = [...t.matchAll(BAR_TOKEN)].map((m) => m[1]).filter(isBar);
+  if (!found.length) for (const line of t.split(/\r?\n/)) { const c = line.replace(/\s+/g, ''); if (c.length >= 9 && c.length <= 11 && isBar(c)) found.push(c); }
+  return found.sort((a, b) => Math.abs(a.length - 10) - Math.abs(b.length - 10))[0] ?? null;
+}
+
+let engWorkerPromise;
+async function getEngWorker() {
+  engWorkerPromise ??= (async () => {
+    const langPath = join(here, 'node_modules', '@tesseract.js-data', 'eng', '4.0.0_best_int');
+    return createWorker('eng', OEM.LSTM_ONLY, { langPath, gzip: true, cachePath: join(here, '.tesscache') });
+  })();
+  return engWorkerPromise;
+}
+
+/** Read the slip: plate line (+ province) and the bar number. */
+export async function readDocument(buffer, opts = {}) {
+  const r = await readSlipPlate(buffer, opts);
+  let barCode = parseBarCode(r.text);
+  if (!barCode) {
+    try {
+      // The bar number is Latin letters + digits: the English model reads it best.
+      const w = await getEngWorker();
+      // The photo as taken works best; a cleaned-up grey copy is the second try.
+      const raw = await sharp(buffer).rotate().resize({ width: 2400, height: 2400, fit: 'inside', withoutEnlargement: true }).png().toBuffer();
+      const grey = await sharp(raw).grayscale().normalize().png().toBuffer();
+      const rots = [r.timings?.rotation ?? 0, 0, 180, 90, 270].filter((v, i, a) => a.indexOf(v) === i);
+      const tries = [...rots.slice(0, 2).flatMap((rot) => [[raw, rot], [grey, rot]]), ...rots.slice(2).map((rot) => [raw, rot])];
+      await w.setParameters({ tessedit_pageseg_mode: PSM.AUTO, user_defined_dpi: '300' });
+      for (const [img, rot] of tries) {
+        const { data } = await w.recognize(rot ? await sharp(img).rotate(rot).toBuffer() : img);
+        barCode = parseBarCode(data.text);
+        if (barCode) break;
+      }
+    } catch {
+      /* the plate result still counts */
+    }
+  }
+  return { ...r, barCode };
+}
+
+async function readSlipPlate(buffer, { debugDir } = {}) {
   const t0 = Date.now();
   const worker = await getDocWorker();
   const base = await sharp(buffer).rotate().toBuffer(); // apply EXIF orientation first
@@ -787,5 +834,6 @@ export async function readDocument(buffer, { debugDir } = {}) {
 export async function shutdown() {
   if (workerPromise) await (await workerPromise).terminate();
   if (docWorkerPromise) await (await docWorkerPromise).terminate();
+  if (engWorkerPromise) await (await engWorkerPromise).terminate();
   if (digitWorkerPromise) await (await digitWorkerPromise).terminate();
 }

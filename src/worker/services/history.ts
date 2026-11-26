@@ -1,7 +1,7 @@
 import type { AuthUser, Env } from '../env';
 import type { AppSettings, SetListResponse, SetRow } from '../../shared/types';
 import { addDays, bangkokDate } from '../../shared/time';
-import { normalizePlate } from '../../shared/plate';
+import { normalizeBarCode, normalizePlate, reverseText } from '../../shared/plate';
 import { can } from '../auth/permissions';
 import { badRequest, forbidden } from '../util';
 import type { DriveClient } from '../drive/types';
@@ -23,7 +23,7 @@ export interface HistoryQuery {
   /** Only sets taken by this user. */
   operatorId?: string;
   /** 'missing' = no plate yet ("ไม่ระบุ"); 'unsure' = automatic reading below 80 %. */
-  plate?: 'missing' | 'unsure';
+  plate?: 'missing' | 'unsure' | 'nobar';
 }
 
 /**
@@ -86,6 +86,7 @@ export function buildWhere(user: AuthUser, q: HistoryQuery): { sql: string; bind
   }
   if (q.plate === 'missing') where.push(`(r.plate_text IS NULL OR r.plate_text = '')`);
   else if (q.plate === 'unsure') where.push(`r.plate_source = 'ocr' AND COALESCE(r.plate_confidence, 0) < 0.8`);
+  else if (q.plate === 'nobar') where.push(`r.bar_code IS NULL`);
   if (q.operatorId) {
     where.push('r.operator_id = ?');
     binds.push(q.operatorId);
@@ -104,6 +105,13 @@ export function buildWhere(user: AuthUser, q: HistoryQuery): { sql: string; bind
       // Prefix range scans use the plate indexes (LIKE '%x%' could not).
       ors.push('(r.plate_norm >= ? AND r.plate_norm < ?)', '(r.plate_digits >= ? AND r.plate_digits < ?)');
       binds.push(norm, norm + '￿', norm, norm + '￿');
+    }
+    // Bar number ("SAM1VFKD36"): starts-with or ends-with ("VFKD36"), both on indexes.
+    const bar = normalizeBarCode(text);
+    if (bar.length >= 3) {
+      ors.push('(r.bar_code >= ? AND r.bar_code < ?)', '(r.bar_code_rev >= ? AND r.bar_code_rev < ?)');
+      const rev = reverseText(bar);
+      binds.push(bar, bar + '\uffff', rev, rev + '\uffff');
     }
     ors.push(
       `r.operator_id IN (SELECT id FROM users WHERE username LIKE ? ESCAPE '\\' OR display_name LIKE ? ESCAPE '\\')`,
@@ -207,6 +215,8 @@ export function toSetRow(r: any, settings: AppSettings, drive: Pick<DriveClient,
     driveTrashed: !!r.drive_trashed_at,
     workflowId: r.workflow_id ?? 'default',
     plateConfidence: r.plate_source === 'ocr' ? (r.plate_confidence ?? null) : null,
+    barCode: r.bar_code ?? null,
+    barCodeSource: r.bar_code_source ?? 'none',
     imagesAllowed: !r.drive_trashed_at && (isRecent(r.op_date, settings, now) || settings.imageDisplayMode === 'cache'),
   };
 }

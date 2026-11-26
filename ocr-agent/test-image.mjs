@@ -30,7 +30,7 @@ for (const f of files) {
     scored++;
     if (norm(r.plate) === norm(expected)) { correct++; mark = '✅'; } else mark = `❌ (ควรเป็น ${expected})`;
   }
-  console.log(`${basename(f)} → ${r.plate ?? 'อ่านไม่ได้'} ${r.province ? '· ' + r.province : ''} · มั่นใจ ${(r.confidence * 100).toFixed(0)}% · ${r.plateFound ? 'เจอกรอบป้าย' : 'ไม่เจอกรอบ (ใช้กลางภาพ)'} · ${r.timings.totalMs} ms ${mark}`);
+  console.log(`${basename(f)} → ${r.plate ?? 'อ่านไม่ได้'} ${r.province ? '· ' + r.province : ''} · มั่นใจ ${(r.confidence * 100).toFixed(0)}% · ${r.plateFound ? 'เจอกรอบป้าย' : 'ไม่เจอกรอบ (ใช้กลางภาพ)'}${r.barCode ? ' · บาร์ ' + r.barCode : ''} · ${r.timings.totalMs} ms ${mark}`);
 }
 if (scored) console.log(`\nความแม่นยำ: ${correct}/${scored} = ${((correct / scored) * 100).toFixed(0)}%`);
 if (files.length === 1) console.log('ภาพที่ใช้อ่าน บันทึกไว้ในโฟลเดอร์ debug/');

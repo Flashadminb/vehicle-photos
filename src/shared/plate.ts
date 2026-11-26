@@ -180,3 +180,41 @@ export function matchProvince(text: string): string | null {
   }
   return best && best.dist <= 0.35 ? best.name : null;
 }
+
+/**
+ * Bar number printed under the dispatch-slip barcode ("เลขบาร์รถ"), e.g. SAM1VFKD36, BKK1VFAX09:
+ * 3 letters, a digit, then 5–7 letters/digits (at least one letter).
+ */
+const BAR_TOKEN = /(?:^|[^A-Z0-9])([A-Z]{3}[0-9][A-Z0-9]{5,7})(?![A-Z0-9])/g;
+
+export function normalizeBarCode(text: string | null | undefined): string {
+  return (text ?? '').normalize('NFC').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 20);
+}
+
+export function isBarCode(code: string): boolean {
+  return /^[A-Z]{3}[0-9][A-Z0-9]{5,7}$/.test(code) && /[A-Z]/.test(code.slice(4));
+}
+
+/** Find the bar number in OCR text (also when OCR split it with a space, e.g. "SAM1VF KD36"). */
+export function extractBarCode(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  // OCR often reads the "1" after the 3-letter prefix as I / l / |.
+  const text = raw
+    .normalize('NFC')
+    .toUpperCase()
+    .replace(/(?<![A-Z0-9])([A-Z]{3})[IL|!]([A-Z0-9]{5,7})(?![A-Z0-9])/g, '$11$2');
+  const found: string[] = [];
+  for (const m of text.matchAll(BAR_TOKEN)) if (isBarCode(m[1])) found.push(m[1]);
+  if (!found.length) {
+    for (const line of text.split(/\r?\n/)) {
+      const compact = line.replace(/\s+/g, '');
+      if (compact.length >= 9 && compact.length <= 11 && isBarCode(compact)) found.push(compact);
+    }
+  }
+  // Prefer the usual 10-character form.
+  return found.sort((a, b) => Math.abs(a.length - 10) - Math.abs(b.length - 10))[0] ?? null;
+}
+
+export function reverseText(s: string): string {
+  return [...s].reverse().join('');
+}

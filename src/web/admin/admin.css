@@ -185,3 +185,6 @@
 .cred-card dt { color: var(--muted); font-size: 13px; }
 .cred-card dd { margin: 0; }
 .cred-big { font-size: 24px; font-weight: 700; letter-spacing: 0.06em; }
+.bar-line { margin-top: 2px; display: flex; align-items: center; gap: 2px; }
+.plate-edit-view.is-bar { font-size: 13px; }
+.bar-line .plate-edit-view { margin: 0; padding: 0 4px; }

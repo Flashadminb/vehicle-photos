@@ -6,6 +6,7 @@ interface ExportSet {
   publicId: string;
   startedAt: number;
   plateDisplay: string;
+  barCode?: string | null;
   operator: { name: string };
   activeCount: number;
   requiredCount: number;
@@ -39,9 +40,9 @@ export async function exportSetsToExcel(
   // One image column per step label (sets may come from different workflow versions).
   const stepLabels: string[] = [];
   for (const s of sets) for (const st of s.steps) if (!stepLabels.includes(st.label)) stepLabels.push(st.label);
-  const fixed = ['เริ่มรอบ (เวลาไทย)', 'รหัสชุดรูป', 'ทะเบียนรถ', 'ผู้ถ่าย', 'จำนวนรูป', 'สถานะ'];
+  const fixed = ['เริ่มรอบ (เวลาไทย)', 'รหัสชุดรูป', 'ทะเบียนรถ', 'เลขบาร์รถ', 'ผู้ถ่าย', 'จำนวนรูป', 'สถานะ'];
   ws.columns = [
-    ...fixed.map((h, i) => ({ header: h, key: `c${i}`, width: [22, 14, 16, 20, 10, 12][i] })),
+    ...fixed.map((h, i) => ({ header: h, key: `c${i}`, width: [22, 14, 24, 14, 20, 10, 12][i] })),
     ...stepLabels.map((h) => ({ header: h, key: `s:${h}`, width: IMG_W / 7 + 2 })),
     { header: 'โฟลเดอร์ Drive', key: 'drive', width: 18 },
   ];
@@ -57,7 +58,7 @@ export async function exportSetsToExcel(
     const s = sets[r];
     const rowIndex = r + 2;
     const row = ws.getRow(rowIndex);
-    row.values = [formatBangkok(s.startedAt), s.publicId, s.plateDisplay, s.operator.name, `${s.activeCount}/${s.requiredCount}`, s.status === 'finalized' ? 'เสร็จสมบูรณ์' : s.status === 'open' ? 'กำลังถ่าย' : 'ถูกทิ้งไว้'];
+    row.values = [formatBangkok(s.startedAt), s.publicId, s.plateDisplay, s.barCode ?? '', s.operator.name, `${s.activeCount}/${s.requiredCount}`, s.status === 'finalized' ? 'เสร็จสมบูรณ์' : s.status === 'open' ? 'กำลังถ่าย' : 'ถูกทิ้งไว้'];
     row.height = IMG_H * 0.75 + 6; // points
     row.alignment = { vertical: 'middle', wrapText: true };
     if (s.driveUrl) {

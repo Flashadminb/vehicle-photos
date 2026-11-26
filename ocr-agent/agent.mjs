@@ -8,7 +8,7 @@ import { hostname } from 'node:os';
 import { readDocument, readPlate, shutdown } from './plate.mjs';
 import { selfUpdate } from './update.mjs';
 
-const VERSION = '1.5.4';
+const VERSION = '1.6.0';
 const cfgFile = new URL('./config.json', import.meta.url);
 const exampleFile = new URL('./config.example.json', import.meta.url);
 
@@ -116,8 +116,8 @@ while (!stopping) {
       const img = Buffer.from(await (await api('GET', job.imageUrl)).arrayBuffer());
       const r = job.kind === 'document' ? await readDocument(img) : await readPlate(img);
       const plate = r.plate && r.confidence >= MIN_CONFIDENCE ? r.plate : null;
-      await api('POST', `/api/ocr-agent/jobs/${job.id}/result`, { text: r.text, plate, confidence: r.confidence });
-      console.log(`[${now()}] ${job.publicId ?? job.id}${job.kind === 'document' ? ' (ใบบาร์รถ)' : ''}: ${plate ?? `ไม่แน่ใจ (${r.plate ?? 'อ่านไม่ได้'})`} · ${Math.round(r.confidence * 100)}% · ${r.timings.totalMs} ms`);
+      await api('POST', `/api/ocr-agent/jobs/${job.id}/result`, { text: r.text, plate, confidence: r.confidence, barCode: r.barCode ?? null });
+      console.log(`[${now()}] ${job.publicId ?? job.id}${job.kind === 'document' ? ' (ใบบาร์รถ)' : ''}: ${plate ?? `ไม่แน่ใจ (${r.plate ?? 'อ่านไม่ได้'})`} · ${Math.round(r.confidence * 100)}%${r.barCode ? ` · บาร์ ${r.barCode}` : ''} · ${r.timings.totalMs} ms`);
     } catch (e) {
       console.error(`[${now()}] อ่านป้าย ${job.publicId ?? job.id} ไม่สำเร็จ: ${e.message}`);
       await api('POST', `/api/ocr-agent/jobs/${job.id}/result`, { error: String(e.message).slice(0, 300) }).catch(() => {});

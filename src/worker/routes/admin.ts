@@ -36,7 +36,9 @@ import { cacheUsage, evictCache, getCache, type CacheKind } from '../services/ca
 import { audit } from '../services/audit';
 import { processJobs } from '../services/maintenance';
 import { cleanupOlderThan, cleanupPreview, driveUsage, restoreRound, trashRound, trashSelected } from '../services/drivetrash';
-import { onlineWindowMs, visionCap, visionPeriod, visionUsage } from '../services/ocr';
+import { applyBarCode, onlineWindowMs, visionCap, visionPeriod, visionUsage } from '../services/ocr';
+import { normalizeBarCode } from '../../shared/plate';
+import { enqueue } from '../services/jobs';
 import { getDrive, isDemo, effectiveRoot } from '../drive';
 import { buildAuthUrl, clearToken, exchangeCode, loadToken, oauthRedirectUri, saveToken } from '../drive/google';
 import { syncRoundFolderName } from '../drive/folders';
@@ -125,7 +127,7 @@ function parseHistoryQuery(q: Record<string, string>): HistoryQuery {
   if (q.workflowId) out.workflowId = str(q.workflowId, 'workflowId', { max: 40 });
   if (q.operatorId) out.operatorId = str(q.operatorId, 'operatorId', { max: 64 });
   if (q.plate) {
-    if (!['missing', 'unsure'].includes(q.plate)) throw badRequest('Invalid plate filter.');
+    if (!['missing', 'unsure', 'nobar'].includes(q.plate)) throw badRequest('Invalid plate filter.');
     out.plate = q.plate as HistoryQuery['plate'];
   }
   if (q.status) {
@@ -228,6 +230,25 @@ admin.post('/drive/cleanup', requirePermission('drive.trash'), async (c) => {
 admin.post('/sets/:id/:action{hide|unhide|remove|restore}', async (c) => {
   await changeVisibility(c.env, c.get('user'), c.req.param('id'), c.req.param('action') as SetAction, clientIp(c));
   return c.json({ ok: true });
+});
+
+admin.put('/sets/:id/barcode', requirePermission('sets.editPlate'), async (c) => {
+  const { barCode } = await readJson<{ barCode: string }>(c);
+  const id = c.req.param('id');
+  const r = await loadVisibleSet(c.env, c.get('user'), id);
+  const clean = normalizeBarCode(String(barCode ?? ''));
+  if (String(barCode ?? '').trim() && !clean) throw badRequest('เลขบาร์ใช้ได้เฉพาะตัวอักษรอังกฤษและตัวเลข');
+  const changed = await applyBarCode(c.env, id, clean, 'manual');
+  await audit(c.env, c.get('user'), 'set.barcode_corrected', { type: 'set', id }, { from: r.bar_code, to: clean || null }, clientIp(c));
+  let folder: { folderId: string; name: string } | null = null;
+  if (changed) {
+    try {
+      folder = await syncRoundFolderName(c.env, getDrive(c.env, baseUrl(c.req.url)), id);
+    } catch (e) {
+      await enqueue(c.env, 'rename_folder', id);
+    }
+  }
+  return c.json({ ok: true, barCode: clean || null, folder });
 });
 
 admin.put('/sets/:id/plate', requirePermission('sets.editPlate'), async (c) => {

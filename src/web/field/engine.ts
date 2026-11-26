@@ -38,6 +38,8 @@ export interface StoredImage {
   acceptedAt: number;
   captureTime: number | null;
   exifTime: string | null;
+  /** Bar number decoded on the phone from the slip barcode, if any. */
+  barCode?: string | null;
   status: 'queued' | 'uploading' | 'uploaded' | 'failed' | 'superseded';
   attempts: number;
   error?: string;
@@ -250,7 +252,7 @@ export class CaptureEngine {
   }
 
   /** Accept a photo for a step. Returns immediately after it is persisted locally. */
-  async accept(stepId: string, blob: Blob, source: ImageSource, meta: { captureTime?: number | null; exifTime?: string | null } = {}) {
+  async accept(stepId: string, blob: Blob, source: ImageSource, meta: { captureTime?: number | null; exifTime?: string | null; barCode?: string | null } = {}) {
     if (this.state.finalize.status === 'pending') return;
     const wf = this.round?.workflow ?? this.latestWorkflow;
     const step = wf.steps.find((s) => s.id === stepId);
@@ -281,6 +283,7 @@ export class CaptureEngine {
       acceptedAt: this.now(),
       captureTime: source === 'camera' ? (meta.captureTime ?? this.now()) : null,
       exifTime: meta.exifTime ?? null,
+      barCode: meta.barCode ?? null,
       status: 'queued',
       attempts: 0,
     };
@@ -551,7 +554,7 @@ export class CaptureEngine {
         ]);
         const done = await this.deps.transport.complete(
           begin.image.id,
-          { displayFileId, originalFileId, displayBytes: rendered.display.size, originalBytes: uploads.original ? prepared.original.size : undefined },
+          { displayFileId, originalFileId, displayBytes: rendered.display.size, originalBytes: uploads.original ? prepared.original.size : undefined, barCode: img.barCode ?? undefined },
           ctrl.signal,
         );
         if (!done.active || !this.isActive(localId)) return;

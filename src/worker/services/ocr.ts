@@ -1,6 +1,6 @@
 import type { Env } from '../env';
 import type { AppSettings } from '../../shared/types';
-import { extractSlipPlate, extractThaiPlate, normalizePlate, plateCore, plateDigits } from '../../shared/plate';
+import { extractSlipPlate, extractThaiPlate, normalizePlate, plateCore, plateDigits, extractBarCode, isBarCode, normalizeBarCode, reverseText } from '../../shared/plate';
 import { b64, fromB64 } from '../util';
 import type { DriveClient } from '../drive/types';
 import { syncRoundFolderName } from '../drive/folders';
@@ -10,6 +10,8 @@ export interface OcrResult {
   raw: string;
   plate: string | null;
   confidence: number | null;
+  /** Dispatch-slip bar number ("เลขบาร์รถ"), when the photo shows one. */
+  barCode?: string | null;
 }
 
 /**
@@ -40,6 +42,11 @@ export function stripWatermarkLines(text: string): string {
 export type OcrKind = 'plate' | 'document';
 
 export function resultFromText(raw: string, confidence: number | null, kind: OcrKind = 'plate'): OcrResult {
+  const r = plateFromText(raw, confidence, kind);
+  return kind === 'document' ? { ...r, barCode: extractBarCode(stripWatermarkLines(raw)) } : r;
+}
+
+function plateFromText(raw: string, confidence: number | null, kind: OcrKind): OcrResult {
   if (kind === 'document') {
     // Only the "บร7865(เพชรบุรี)" pattern counts on a slip; other text (dates, IDs) is ignored.
     const slip = extractSlipPlate(stripWatermarkLines(raw));
@@ -266,5 +273,25 @@ export async function applyOcrResult(
   )
     .bind(roundId, now, source.slice(0, 60), round.plate_text, plate, result.raw.slice(0, 500), result.confidence)
     .run();
-  if (replace) await syncRoundFolderName(env, drive, roundId);
+  const barChanged = await applyBarCode(env, roundId, result.barCode ?? null, 'ocr', now);
+  if (replace || barChanged) await syncRoundFolderName(env, drive, roundId);
+}
+
+/**
+ * Store the bar number unless a more trusted one is already there:
+ * manual (typed) > device (barcode decoded on the phone) > ocr (read from the photo).
+ * Returns true when it changed (the Drive folder name includes it).
+ */
+export async function applyBarCode(env: Env, roundId: string, code: string | null, source: 'ocr' | 'device' | 'manual', now = Date.now()) {
+  const bar = normalizeBarCode(code);
+  if (source !== 'manual' && !isBarCode(bar)) return false;
+  const rank = { none: 0, ocr: 1, device: 2, manual: 3 } as const;
+  const cur = await env.DB.prepare(`SELECT bar_code, bar_code_source FROM rounds WHERE id = ?`).bind(roundId).first<{ bar_code: string | null; bar_code_source: keyof typeof rank }>();
+  if (!cur) return false;
+  if (source !== 'manual' && rank[cur.bar_code_source ?? 'none'] > rank[source]) return false;
+  if ((cur.bar_code ?? '') === bar && cur.bar_code_source === source) return false;
+  await env.DB.prepare(`UPDATE rounds SET bar_code = ?, bar_code_rev = ?, bar_code_source = ?, updated_at = ? WHERE id = ?`)
+    .bind(bar || null, bar ? reverseText(bar) : null, bar ? source : 'none', now, roundId)
+    .run();
+  return (cur.bar_code ?? '') !== bar;
 }
