@@ -27,11 +27,28 @@ export class IdbStore implements EngineStore {
   async clearRound() {
     await (await this.db).delete('rounds', this.userId);
   }
+  /**
+   * Photos are stored as raw bytes, not Blob objects: iPhone Safari can lose the data behind a
+   * Blob kept in IndexedDB ("Loading error."), while plain bytes read back reliably.
+   */
   async putImage(img: StoredImage) {
-    await (await this.db).put('images', img);
+    const toBytes = async (b: Blob | null) => {
+      if (!b) return null;
+      try {
+        return { bytes: await b.arrayBuffer(), type: b.type || 'image/jpeg' };
+      } catch {
+        return null; // an older stored copy that Safari can no longer read
+      }
+    };
+    const { blob, thumb, ...rest } = img;
+    await (await this.db).put('images', { ...rest, blob: null, thumb: null, blobBytes: await toBytes(blob), thumbBytes: await toBytes(thumb) });
   }
   async getImage(localId: string) {
-    return ((await (await this.db).get('images', localId)) as StoredImage | undefined) ?? null;
+    const r = (await (await this.db).get('images', localId)) as any;
+    if (!r) return null;
+    const fromBytes = (x: { bytes: ArrayBuffer; type: string } | null | undefined, legacy: Blob | null) => (x ? new Blob([x.bytes], { type: x.type }) : legacy ?? null);
+    const { blobBytes, thumbBytes, ...rest } = r;
+    return { ...rest, blob: fromBytes(blobBytes, r.blob), thumb: fromBytes(thumbBytes, r.thumb) } as StoredImage;
   }
   async deleteImage(localId: string) {
     await (await this.db).delete('images', localId);

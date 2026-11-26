@@ -139,6 +139,12 @@ export class CaptureEngine {
   private latestWorkflow: WorkflowVersion;
   private listeners = new Set<Listener>();
   private inflight = new Map<string, AbortController>();
+  /**
+   * The photo as captured, kept in memory until it is uploaded. iPhone Safari sometimes cannot
+   * read a photo back from browser storage ("Loading error."), so the stored copy is only the
+   * fallback for after a reload.
+   */
+  private memBlobs = new Map<string, Blob>();
   private retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private now: () => number;
   private uuid: () => string;
@@ -288,6 +294,7 @@ export class CaptureEngine {
       attempts: 0,
     };
     await this.deps.store.putImage(img);
+    this.memBlobs.set(localId, blob);
 
     // Invalidate the previous image of this step (if any).
     const prev = this.state.slots[stepId];
@@ -428,6 +435,7 @@ export class CaptureEngine {
   }
 
   private async invalidate(localId: string) {
+    this.memBlobs.delete(localId);
     this.inflight.get(localId)?.abort();
     this.inflight.delete(localId);
     const t = this.retryTimers.get(localId);
@@ -475,18 +483,22 @@ export class CaptureEngine {
     const stillActive = () => !ctrl.signal.aborted && this.isActive(localId);
     this.setSlot(stepId, localId, { status: 'uploading', error: undefined });
     try {
-      const img = await this.deps.store.getImage(localId);
+      const stored = await this.deps.store.getImage(localId);
       if (!stillActive()) return;
+      const img = stored ? { ...stored, blob: this.memBlobs.get(localId) ?? stored.blob } : stored;
       if (!img?.blob) {
         if (img?.status === 'uploaded') this.setSlot(stepId, localId, { status: 'uploaded' });
         else this.setSlot(stepId, localId, { status: 'failed', error: 'The photo is no longer on this device. Retake it.' });
         return;
       }
-      await this.deps.store.putImage({ ...img, status: 'uploading' });
+      await this.deps.store.putImage({ ...stored!, status: 'uploading' });
 
       // Ask the server for upload targets WHILE the photo is being prepared (saves a round trip).
       const [prepared, begin] = await Promise.all([
-        this.deps.imaging.prepare(img.blob, { original: this.deps.needOriginal?.(step) ?? false }),
+        this.deps.imaging.prepare(img.blob, { original: this.deps.needOriginal?.(step) ?? false }).catch((e) => {
+          // The saved copy of the photo cannot be read on this phone: retrying will not help.
+          throw Object.assign(new Error('photo_unreadable'), { retryable: false, cause: e });
+        }),
         this.deps.transport.begin(
           {
             clientRoundId: round.clientRoundId,
@@ -559,14 +571,16 @@ export class CaptureEngine {
         );
         if (!done.active || !this.isActive(localId)) return;
         // Acknowledged: now (and only now) the full-size local copy can go.
-        await this.deps.store.putImage({ ...img, blob: null, thumb: rendered.thumb, status: 'uploaded', serverImageId: begin.image.id, error: undefined });
+        await this.deps.store.putImage({ ...stored!, blob: null, thumb: rendered.thumb, status: 'uploaded', serverImageId: begin.image.id, error: undefined });
+        this.memBlobs.delete(localId);
         // Show the stamped thumbnail in the app from now on.
         const old = this.state.slots[stepId]?.previewUrl;
         this.setSlot(stepId, localId, { status: 'uploaded', error: undefined, progress: undefined, previewUrl: this.createObjectURL(rendered.thumb) });
         if (old) this.revokeObjectURL(old);
         return;
       } else {
-        await this.deps.store.putImage({ ...img, blob: null, status: 'uploaded', serverImageId: begin.image.id });
+        await this.deps.store.putImage({ ...stored!, blob: null, status: 'uploaded', serverImageId: begin.image.id });
+        this.memBlobs.delete(localId);
       }
       this.setSlot(stepId, localId, { status: 'uploaded', error: undefined });
     } catch (e) {

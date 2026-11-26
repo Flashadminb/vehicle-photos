@@ -248,7 +248,7 @@ export function CaptureView(p: CaptureViewProps) {
             <button type="button" className="btn btn-sm" onClick={() => p.onRetry(failedStep.id)}>
               {t('retry')}
             </button>
-            {slots[failedStep.id]?.error && <span className="small muted fa-error">{slots[failedStep.id]?.error}</span>}
+            {slots[failedStep.id]?.error && <span className="small muted fa-error">{errorText(slots[failedStep.id]!.error!, t)}</span>}
           </span>
         )}
         {p.publicId && <span className="small muted mono">{p.publicId}</span>}
@@ -262,4 +262,10 @@ export function CaptureView(p: CaptureViewProps) {
       )}
     </div>
   );
+}
+
+/** Known error codes have an (admin-editable) text; anything else is shown as is. */
+function errorText(err: string, t: CaptureViewProps['t']) {
+  if (/^photo_unreadable$|loading error|webkitblobresource/i.test(err)) return t('photo_unreadable');
+  return err;
 }
